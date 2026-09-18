@@ -1,0 +1,29 @@
+schema:
+  name: nidar-config
+  version: 1
+profile:
+  name: competition
+  inherits: hardware
+  environment: competition
+validation:
+  reject_unknown_keys: true
+  reject_unset_required_values: true
+  allow_debug_overrides: false
+  require_explicit_units: true
+  require_explicit_timeouts: true
+  require_explicit_frame_ids: true
+mission: { enabled: true, parameters: {} }
+safety: { enabled: true, parameters: {} }
+navigation: { enabled: true, parameters: {} }
+estimation: { source: px4, parameters: {} }
+perception:
+  lidar: { enabled: false }
+  vision: { enabled: false }
+release:
+  require_versioned_config: true
+  require_px4_parameter_hash: true
+  require_sensor_config_hash: true
+  require_runtime_image_digest: true
+  require_source_commit: true
+logging: { parameters: {} }
+runtime: { parameters: {} }

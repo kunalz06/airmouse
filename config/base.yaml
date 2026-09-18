@@ -1,0 +1,44 @@
+schema:
+  name: nidar-config
+  version: 1
+
+profile:
+  name: base
+  inherits: null
+  environment: generic
+
+validation:
+  reject_unknown_keys: true
+  require_explicit_units: true
+  require_explicit_timeouts: true
+  require_explicit_frame_ids: true
+
+vehicle:
+  interface: mavsdk
+  transport:
+    type: null
+    endpoint: null
+    device: null
+    baud_rate: null
+
+mission:
+  enabled: true
+  parameters: {}
+safety:
+  enabled: true
+  parameters: {}
+navigation:
+  enabled: false
+  parameters: {}
+estimation:
+  source: px4
+  parameters: {}
+sensors:
+  optical_flow: { enabled: false, type: null, frame_id: null, parameters: {} }
+  range: { enabled: false, type: null, frame_id: null, parameters: {} }
+  lidar: { enabled: false, type: null, frame_id: null, parameters: {} }
+  camera: { enabled: false, type: null, frame_id: null, parameters: {} }
+logging:
+  parameters: {}
+runtime:
+  parameters: {}

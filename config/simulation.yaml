@@ -1,0 +1,30 @@
+schema:
+  name: nidar-config
+  version: 1
+profile:
+  name: simulation
+  inherits: base
+  environment: simulation
+vehicle:
+  interface: mavsdk
+  transport:
+    type: udp
+    endpoint: null
+    device: null
+    baud_rate: null
+simulation:
+  backend: px4-sitl
+  simulator: gazebo
+hardware:
+  enabled: false
+mission: { parameters: {} }
+safety: { parameters: {} }
+navigation: { parameters: {} }
+estimation: { source: px4, parameters: {} }
+sensors:
+  optical_flow: { enabled: false, parameters: {} }
+  range: { enabled: false, parameters: {} }
+  lidar: { enabled: false, parameters: {} }
+  camera: { enabled: false, parameters: {} }
+logging: { parameters: {} }
+runtime: { parameters: {} }

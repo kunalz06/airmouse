@@ -1,0 +1,29 @@
+schema:
+  name: nidar-config
+  version: 1
+profile:
+  name: hardware
+  inherits: base
+  environment: hardware
+vehicle:
+  interface: mavsdk
+  transport:
+    type: serial
+    endpoint: null
+    device: null
+    baud_rate: null
+hardware:
+  enabled: true
+  flight_controller: { type: cuav-x7-plus }
+  companion: { type: raspberry-pi-5 }
+sensors:
+  optical_flow: { enabled: true, type: mtf-01p, frame_id: null, parameters: {} }
+  range: { enabled: true, type: mtf-01p, frame_id: null, parameters: {} }
+  lidar: { enabled: false, type: slamtec-2d, frame_id: null, parameters: {} }
+  camera: { enabled: false, type: null, frame_id: null, parameters: {} }
+mission: { parameters: {} }
+safety: { parameters: {} }
+navigation: { parameters: {} }
+estimation: { source: px4, parameters: {} }
+logging: { parameters: {} }
+runtime: { parameters: {} }
