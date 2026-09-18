@@ -1,0 +1,19 @@
+Preset CMake variables:
+
+  CMAKE_CXX_EXTENSIONS="OFF"
+  CMAKE_CXX_STANDARD="20"
+  CMAKE_CXX_STANDARD_REQUIRED="ON"
+  CMAKE_EXPORT_COMPILE_COMMANDS="ON"
+
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /workspace/build/dev
+ninja: no work to do.
+Internal ctest changing into directory: /workspace/build/dev
+Test project /workspace/build/dev
+    Start 1: NidarFlight.BuildTargetIsAvailable
+1/1 Test #1: NidarFlight.BuildTargetIsAvailable ...   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.01 sec

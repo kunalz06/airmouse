@@ -1,0 +1,48 @@
+Images space usage:
+
+REPOSITORY          TAG       IMAGE ID       CREATED         SIZE      SHARED SIZE   UNIQUE SIZE   CONTAINERS
+nidar-dev           latest    c2cd4505babd   9 minutes ago   1.22GB    2B            1.224GB       0
+tonistiigi/binfmt   latest    400a4873b838   3 months ago    118MB     2B            118.1MB       0
+hello-world         latest    5e2309035332   5 months ago    25.9kB    0B            25.87kB       0
+
+Containers space usage:
+
+CONTAINER ID   IMAGE     COMMAND   LOCAL VOLUMES   SIZE      CREATED   STATUS    NAMES
+
+Local Volumes space usage:
+
+VOLUME NAME   LINKS     SIZE
+
+Build cache usage: 1.773GB
+
+CACHE ID       CACHE TYPE     SIZE      CREATED          LAST USED       USAGE     SHARED
+vx3iptxktquw   regular        117MB     13 minutes ago   9 minutes ago   1         false
+uzkib0jb4r6j   regular        8.29kB    9 minutes ago    9 minutes ago   1         false
+k70dnk8li7yn   regular        1.11GB    9 minutes ago    9 minutes ago   1         false
+ipemliyecrdu   regular        467kB     7 minutes ago    7 minutes ago   1         false
+v3n23q1sewuz   regular        408MB     4 minutes ago    3 minutes ago   1         false
+q8s299nyoary   regular        101kB     3 minutes ago    3 minutes ago   1         false
+j5afolxwd3ip   source.local   8.19kB    13 minutes ago   3 minutes ago   3         false
+iocswpai0r6y   source.local   8.19kB    13 minutes ago   3 minutes ago   3         false
+3ttuddbr7si1   regular        139MB     7 minutes ago    3 minutes ago   2         false
+44icqbkqt8hj   regular        8.19kB    7 minutes ago    3 minutes ago   2         false
+k5e0p4vz03za   source.local   467kB     7 minutes ago    3 minutes ago   2         false
+atfzjazt1698   regular        471kB     4 minutes ago    3 minutes ago   1         false
+ID                           RECLAIMABLE   SIZE      LAST ACCESSED
+44icqbkqt8hjv5q6qn0estohp    true          8.192kB   3 minutes ago
+iocswpai0r6yoim97kjsbwi0d*   true          8.192kB   3 minutes ago
+j5afolxwd3ipz2aapoxh8isaw*   true          8.192kB   3 minutes ago
+uzkib0jb4r6jw35dddwx2fum3    true          8.291kB   9 minutes ago
+q8s299nyoarynk4gknftuhwex    true          101.1kB   3 minutes ago
+ipemliyecrdupqnfqhvbpbj21    true          466.9kB   7 minutes ago
+k5e0p4vz03zayk8esuja29nvy*   true          466.9kB   3 minutes ago
+atfzjazt16982vi2lkh3dulqu    true          471kB     3 minutes ago
+vx3iptxktquwsh1j6ye0brvec    true          117.4MB   9 minutes ago
+3ttuddbr7si1k4ybc76guunf3    true          139.4MB   3 minutes ago
+v3n23q1sewuzib0yuxi9ysuyz*   true          407.9MB   3 minutes ago
+k70dnk8li7yno0yd77kv13ugd    true          1.107GB   9 minutes ago
+Reclaimable:	1.773GB
+Total:		1.773GB
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  468G   40G  405G   9% /
+1.4M	build

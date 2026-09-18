@@ -1,0 +1,14 @@
+name: build-test
+on: [push, pull_request]
+jobs:
+  amd64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --platform linux/amd64 -t nidar-dev -f docker/dev/Dockerfile .
+      - run: ./scripts/configure.sh && ./scripts/build.sh && ./scripts/test.sh
+  arm64-runtime:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker buildx build --platform linux/arm64 --output type=oci,dest=nidar-runtime-arm64.tar -f docker/runtime/Dockerfile .
