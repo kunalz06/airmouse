@@ -1,0 +1,4 @@
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
+sandbox = "workspace-write"
+role = "C++, MAVSDK, mission, navigation, and infrastructure implementation."

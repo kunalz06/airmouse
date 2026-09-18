@@ -1,0 +1,18 @@
+lock_format_version = 1
+verification_date = "2026-09-19"
+host_architecture = "linux/amd64"
+docker_engine = "5:29.8.1-1~ubuntu.26.04~resolute"
+docker_buildx = "0.37.1"
+docker_compose = "5.5.1"
+qgroundcontrol_version = "v5.1.4"
+qgroundcontrol_url = "https://github.com/mavlink/qgroundcontrol/releases/download/v5.1.4/QGroundControl-x86_64.AppImage"
+qgroundcontrol_sha256 = "1c4ac089abfaac6c6fcd75c7b477ea18da1bc3592cddca5ab1a19c1a13410e65"
+px4 = "not-selected"
+gazebo = "not-selected"
+mavsdk = "not-selected"
+yaml_cpp = "not-selected"
+spdlog = "not-selected"
+googletest = "not-selected"
+
+# Every later selected dependency records source URL, version or commit,
+# architecture, and verification date.

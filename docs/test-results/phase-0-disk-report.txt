@@ -1,0 +1,21 @@
+Images space usage:
+
+REPOSITORY    TAG       IMAGE ID       CREATED        SIZE      SHARED SIZE   UNIQUE SIZE   CONTAINERS
+hello-world   latest    5e2309035332   5 months ago   25.9kB    0B            25.87kB       0
+
+Containers space usage:
+
+CONTAINER ID   IMAGE     COMMAND   LOCAL VOLUMES   SIZE      CREATED   STATUS    NAMES
+
+Local Volumes space usage:
+
+VOLUME NAME   LINKS     SIZE
+
+Build cache usage: 0B
+
+CACHE ID   CACHE TYPE   SIZE      CREATED   LAST USED   USAGE     SHARED
+ID        RECLAIMABLE   SIZE      LAST ACCESSED
+Reclaimable:	0B
+Total:		0B
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  468G   37G  407G   9% /

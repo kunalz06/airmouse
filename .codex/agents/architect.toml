@@ -1,0 +1,4 @@
+model = "gpt-6-astra"
+reasoning_effort = "high"
+sandbox = "read-only"
+role = "Architecture and safety-boundary review only."

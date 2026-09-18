@@ -1,0 +1,4 @@
+model = "gpt-6-astra"
+reasoning_effort = "high"
+sandbox = "read-only"
+role = "Arming, takeoff, landing, Offboard, failsafe, and estimator safety review."

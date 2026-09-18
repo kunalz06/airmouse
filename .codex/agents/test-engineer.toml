@@ -1,0 +1,4 @@
+model = "gpt-5.6-terra"
+reasoning_effort = "high"
+sandbox = "workspace-write"
+role = "Tests, fixtures, fault injection, and scenarios; no architecture redesign."
