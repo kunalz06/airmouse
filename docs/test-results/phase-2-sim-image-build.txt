@@ -1,0 +1,20 @@
+Phase 2 simulation image build evidence
+=======================================
+
+Image: nidar-px4-sim:v1.17.0-x500
+Image ID: sha256:b241eb9e81a2154126cdd1a2fb01fbc390bc12085ed570b04b519524434c6d3b
+Image size: 10,661,527,772 bytes
+PX4 source commit: d6f12ad1c4f70ad3230afd7d86e971421e02fef4
+PX4 recursive submodule-status SHA-256:
+2c1da1e64388a1a6e68d240df31e744c01c629ca238c615e5677f1ba77d6f187
+
+Selected Gazebo packages:
+- gz-harmonic 1.0.0-1~noble
+- gz-sim8-cli 8.15.0-1~noble
+- libogre-next-2.3.0 2.3.1-9osrf~noble
+
+Build definition: docker/sim/Dockerfile
+Base image: ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+Verification: the image's PX4 checkout and recursive submodule status were
+queried directly after the successful build. Mutable test output is excluded
+from the image by .dockerignore and is written under simulation/output/.

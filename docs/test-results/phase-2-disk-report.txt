@@ -1,0 +1,28 @@
+Phase 2 Docker disk report
+==========================
+
+Timestamp: 2026-09-20
+Command: scripts/docker-disk-report.sh
+
+Before bounded cleanup:
+- Docker images: 11.89 GB
+- BuildKit cache: 35.22 GB, including 12.27 GB reclaimable
+- Volumes: none
+- Containers: none
+- Host free space: 366 GB
+
+Cleanup commands:
+1. scripts/docker-gc.sh (the prescribed seven-day cleanup; reclaimed 0 B)
+2. docker buildx prune --max-used-space 10gb -f (unused cache only)
+
+After cleanup:
+- Docker images: 11.89 GB
+- BuildKit cache: 22.95 GB, 0 B reclaimable
+- Volumes: none
+- Containers: none
+- Host free space: 374 GB
+
+The active PX4/Gazebo image layers cannot meet the original 10 GB BuildKit
+soft limit. The Phase 2 revised explicit budget is recorded in
+docs/CONFIGURATION.md. No image, named volume, log, evidence file, or
+worktree was deleted.

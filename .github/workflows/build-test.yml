@@ -12,3 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker buildx build --platform linux/arm64 --output type=oci,dest=nidar-runtime-arm64.tar -f docker/runtime/Dockerfile .
+  sitl-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --progress=plain -t nidar-px4-sim:v1.17.0-x500 -f docker/sim/Dockerfile .
+      - run: tests/sitl/test_sitl_smoke.sh
+      - run: NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-headless.sh

@@ -1,0 +1,31 @@
+Phase 2 headless SITL smoke evidence
+=====================================
+
+Timestamp: 2026-09-20T10:33:30+05:30
+Command: tests/sitl/test_sitl_smoke.sh
+Result: PASS (unused UDP 14560 correctly timed out without transmitting)
+
+Timestamp: 2026-09-20T10:33:30+05:30
+Command: NIDAR_SITL_TIMEOUT_SECONDS=60 scripts/sitl-headless.sh
+Image: nidar-px4-sim:v1.17.0-x500
+Image ID: sha256:b241eb9e81a2154126cdd1a2fb01fbc390bc12085ed570b04b519524434c6d3b
+PX4 source: d6f12ad1c4f70ad3230afd7d86e971421e02fef4
+Vehicle: gz_x500
+Deadline: 60 seconds
+
+MAVLink topology:
+- PX4 localhost source UDP 14561 -> passive listener UDP 14560
+- PX4 localhost source UDP 14551 -> host QGroundControl UDP 14550
+- The smoke listener opened only UDP 14560 and sent no MAVLink frames.
+
+Discovery and telemetry:
+- Gazebo Harmonic started and the X500 model spawned.
+- PX4 started the 14561 -> 14560 normal MAVLink observer link.
+- The listener received a HEARTBEAT whose autopilot was MAV_AUTOPILOT_PX4.
+- The listener received LOCAL_POSITION_NED before the deadline.
+- Listener output: "passive SITL smoke passed: received PX4 HEARTBEAT and LOCAL_POSITION_NED"
+
+Shutdown and cleanup:
+- Launcher stopped nidar-sitl-headless after the listener passed.
+- docker ps -a contained no nidar-sitl-headless or nidar-sitl-smoke container.
+- Final status: PASS.

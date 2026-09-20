@@ -6,7 +6,7 @@ Update this file at the completion, blockage, or formal authorization of every p
 |---|---|---|---|
 | Phase 0 — Project Foundation | Complete | `bf5950c`; `docs/test-results/phase-0-architecture-review.md` | Begin Phase 1 only through its approved plan. |
 | Phase 1 — Build and Toolchain | Complete | Phase 1 build/test and disk evidence | Do not start Phase 2 without a separate approved plan. |
-| Phase 2 — PX4 SITL / Gazebo | Not started | — | Do not start until Phase 1 exit criteria pass. |
+| Phase 2 — PX4 SITL / Gazebo | Complete | Phase 2 SITL, GUI/QGroundControl, image, and disk evidence | Begin Phase 3 only through its approved plan. |
 | Phase 3 — Vehicle Layer | Not started | — | Do not start until Phase 2 exit criteria pass. |
 | Phase 4 — Raspberry Pi Deployment | Not started | — | Do not start until Phase 3 exit criteria pass. |
 | Phase 5 — Mission / Safety Core | Not started | — | Do not start until Phase 4 exit criteria pass. |

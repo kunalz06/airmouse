@@ -37,8 +37,9 @@ unpinned branch. Gazebo package and image provenance must be recorded in
 `docker/sim/Dockerfile` is the single supported Ubuntu 24.04 PX4 build and
 runtime image. It installs PX4's documented development dependencies, checks
 out the pinned PX4 source, initializes pinned submodules, and builds the
-`px4_sitl_default` / Gazebo X500 target. It may contain only the prebuilt
-SITL artifacts necessary to run X500, never mutable logs, host state,
+`px4_sitl_default` target. The X500 Gazebo run target is invoked only by the
+bounded launch scripts. The image may contain only the prebuilt SITL artifacts
+necessary to run X500, never mutable logs, host state,
 test-result output, or unrelated build trees. Launch scripts never download
 source, models, packages, or dependencies at runtime.
 
