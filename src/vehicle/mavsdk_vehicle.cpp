@@ -398,8 +398,8 @@ class MavsdkVehicle::Impl {
 
     auto configuration =
         mavsdk::Mavsdk::Configuration{mavsdk::ComponentType::CompanionComputer};
-    mavsdk::Mavsdk sdk{configuration};
-    return sdk.version();
+    mavsdk::Mavsdk local_sdk{configuration};
+    return local_sdk.version();
   }
 
  private:
