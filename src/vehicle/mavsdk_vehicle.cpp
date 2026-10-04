@@ -303,9 +303,8 @@ public:
         discovery_->condition.notify_all();
       }
 
-      lifecycle_condition_.wait(lifecycle_lock, [this] {
-        return !connecting_ && !tearing_down_;
-      });
+      lifecycle_condition_.wait(
+          lifecycle_lock, [this] { return !connecting_ && !tearing_down_; });
 
       bundle = std::exchange(bundle_, nullptr);
       tearing_down_ = bundle != nullptr;
