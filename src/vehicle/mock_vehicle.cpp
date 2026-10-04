@@ -141,23 +141,26 @@ void MockVehicle::set_system_id(std::uint8_t system_id) {
   system_id_ = system_id;
 }
 
-void MockVehicle::publish_armed(bool armed, SteadyTimePoint timestamp) {
+void MockVehicle::publish_armed(bool armed, SteadyTimePoint timestamp,
+                                TelemetryValidity validity) {
   std::lock_guard lock(mutex_);
-  snapshot_.armed = {armed, TelemetryValidity::Valid, timestamp};
+  snapshot_.armed = {armed, validity, timestamp};
   condition_.notify_all();
 }
 
 void MockVehicle::publish_flight_mode(FlightMode mode,
-                                      SteadyTimePoint timestamp) {
+                                      SteadyTimePoint timestamp,
+                                      TelemetryValidity validity) {
   std::lock_guard lock(mutex_);
-  snapshot_.flight_mode = {mode, TelemetryValidity::Valid, timestamp};
+  snapshot_.flight_mode = {mode, validity, timestamp};
   condition_.notify_all();
 }
 
 void MockVehicle::publish_battery(BatteryState battery,
-                                  SteadyTimePoint timestamp) {
+                                  SteadyTimePoint timestamp,
+                                  TelemetryValidity validity) {
   std::lock_guard lock(mutex_);
-  snapshot_.battery = {battery, TelemetryValidity::Valid, timestamp};
+  snapshot_.battery = {battery, validity, timestamp};
   condition_.notify_all();
 }
 
