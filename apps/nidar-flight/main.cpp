@@ -119,6 +119,8 @@ std::string_view connection_result_name(VehicleConnectionResult result) {
       return "transport-failure";
     case VehicleConnectionResult::DiscoveryTimeout:
       return "discovery-timeout";
+    case VehicleConnectionResult::Cancelled:
+      return "cancelled";
     case VehicleConnectionResult::InvalidArgument:
       return "invalid-argument";
   }
