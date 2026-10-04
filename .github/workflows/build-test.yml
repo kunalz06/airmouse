@@ -17,6 +17,7 @@ jobs:
       - run: tests/integration/test_nidar_flight_cli.sh
       - run: ./scripts/lint.sh
       - run: ./scripts/sanitize.sh
+      - run: ./scripts/docker-disk-report.sh
 
   sitl:
     runs-on: ubuntu-24.04
@@ -30,6 +31,7 @@ jobs:
       - run: NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-headless.sh
       - run: tests/sitl/test_vehicle_sitl.sh --occupied-port
       - run: NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-vehicle.sh
+      - run: ./scripts/docker-disk-report.sh
 
 # linux/arm64 runtime packaging is intentionally deferred to Phase 4.
 # MAVSDK v3.17.2 publishes no Ubuntu 24.04 arm64 development package, so
