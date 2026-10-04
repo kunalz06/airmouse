@@ -78,7 +78,7 @@ docker run --name "${sim_name}" --network host --init   -v "${overlay}:${px4_roo
 sim_pid=$!
 
 set +e
-docker run --rm --name "${client_name}" --network host --init   -v "${project_root}:/workspace:ro" -w /workspace   "${dev_image}"   build/dev/nidar-flight     --sim     --endpoint udpin://127.0.0.1:14540     --discovery-timeout-ms "$((timeout_seconds * 1000))"     --telemetry-max-age-ms 1000     --telemetry-wait-ms 15000   >"${client_log}" 2>&1
+docker run --rm --name "${client_name}" --network host --init   -v "${project_root}:/workspace:ro" -w /workspace   "${dev_image}"   build/dev/nidar-flight     --sim     --endpoint udpin://127.0.0.1:14540     --discovery-timeout-ms "$((timeout_seconds * 1000))"     --telemetry-max-age-ms 2000     --telemetry-wait-ms 15000   >"${client_log}" 2>&1
 client_status=$?
 set -e
 
