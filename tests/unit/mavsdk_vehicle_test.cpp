@@ -1,4 +1,6 @@
 #include <chrono>
+#include <future>
+#include <thread>
 
 #include <gtest/gtest.h>
 
@@ -27,6 +29,25 @@ TEST(MavsdkVehicle, EmptyListenerIsDiscoveryTimeout) {
   EXPECT_EQ(
       vehicle.connect("udpin://127.0.0.1:14690", 50ms),
       VehicleConnectionResult::DiscoveryTimeout);
+  EXPECT_EQ(vehicle.connection_status(), ConnectionState::Disconnected);
+}
+
+TEST(MavsdkVehicle, DisconnectCancelsPendingDiscovery) {
+  MavsdkVehicle vehicle;
+  auto result = std::async(std::launch::async, [&vehicle] {
+    return vehicle.connect("udpin://127.0.0.1:49691", 5s);
+  });
+
+  const auto deadline = SteadyClock::now() + 1s;
+  while (vehicle.connection_status() != ConnectionState::Connecting &&
+         SteadyClock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_EQ(vehicle.connection_status(), ConnectionState::Connecting);
+
+  vehicle.disconnect();
+  ASSERT_EQ(result.wait_for(1s), std::future_status::ready);
+  EXPECT_EQ(result.get(), VehicleConnectionResult::Cancelled);
   EXPECT_EQ(vehicle.connection_status(), ConnectionState::Disconnected);
 }
 
