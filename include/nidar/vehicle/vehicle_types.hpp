@@ -21,6 +21,7 @@ enum class VehicleConnectionResult {
   AlreadyConnected,
   TransportFailure,
   DiscoveryTimeout,
+  Cancelled,
   InvalidArgument,
 };
 
