@@ -45,9 +45,18 @@ public:
 
   void set_next_connect_result(VehicleConnectionResult result);
   void set_system_id(std::uint8_t system_id);
-  void publish_armed(bool armed, SteadyTimePoint timestamp);
-  void publish_flight_mode(FlightMode mode, SteadyTimePoint timestamp);
-  void publish_battery(BatteryState battery, SteadyTimePoint timestamp);
+  void publish_armed(
+      bool armed,
+      SteadyTimePoint timestamp,
+      TelemetryValidity validity = TelemetryValidity::Valid);
+  void publish_flight_mode(
+      FlightMode mode,
+      SteadyTimePoint timestamp,
+      TelemetryValidity validity = TelemetryValidity::Valid);
+  void publish_battery(
+      BatteryState battery,
+      SteadyTimePoint timestamp,
+      TelemetryValidity validity = TelemetryValidity::Valid);
 
 private:
   static void invalidate(TelemetrySnapshot &snapshot);
