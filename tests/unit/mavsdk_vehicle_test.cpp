@@ -47,6 +47,9 @@ TEST(MavsdkVehicle, DisconnectCancelsPendingDiscovery) {
   ASSERT_EQ(result.wait_for(1s), std::future_status::ready);
   EXPECT_EQ(result.get(), VehicleConnectionResult::Cancelled);
   EXPECT_EQ(vehicle.connection_status(), ConnectionState::Disconnected);
+
+  EXPECT_EQ(vehicle.connect("udpin://127.0.0.1:49691", 50ms),
+            VehicleConnectionResult::DiscoveryTimeout);
 }
 
 TEST(MavsdkVehicle, RepeatedDiscoveryTimeoutsReleaseOwnedEndpoint) {
