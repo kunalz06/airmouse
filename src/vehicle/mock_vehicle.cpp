@@ -1,7 +1,5 @@
 #include "nidar/vehicle/mock_vehicle.hpp"
 
-#include <utility>
-
 namespace nidar::vehicle {
 namespace {
 
@@ -159,7 +157,7 @@ void MockVehicle::publish_flight_mode(FlightMode mode,
 void MockVehicle::publish_battery(BatteryState battery,
                                   SteadyTimePoint timestamp) {
   std::lock_guard lock(mutex_);
-  snapshot_.battery = {std::move(battery), TelemetryValidity::Valid, timestamp};
+  snapshot_.battery = {battery, TelemetryValidity::Valid, timestamp};
   condition_.notify_all();
 }
 
