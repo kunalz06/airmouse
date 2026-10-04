@@ -1,5 +1,5 @@
 lock_format_version = 1
-verification_date = "2026-09-19"
+verification_date = "2026-10-04"
 host_architecture = "linux/amd64"
 docker_engine = "5:29.8.1-1~ubuntu.26.04~resolute"
 docker_buildx = "0.37.1"
@@ -19,10 +19,15 @@ gz_sim = "8.15.0-1~noble"
 libogre_next = "2.3.1-9osrf~noble"
 px4_submodules_sha256 = "2c1da1e64388a1a6e68d240df31e744c01c629ca238c615e5677f1ba77d6f187"
 nidar_px4_sim_image = "sha256:b241eb9e81a2154126cdd1a2fb01fbc390bc12085ed570b04b519524434c6d3b"
-mavsdk = "not-selected"
-yaml_cpp = "not-selected"
-spdlog = "not-selected"
-googletest = "not-selected"
+mavsdk = "v3.17.2"
+mavsdk_tag_commit = "9e3ca17faa84aa868caea10a3bbdab7e53810ced"
+mavsdk_source_url = "https://github.com/mavlink/MAVSDK"
+mavsdk_amd64_asset = "libmavsdk-dev_3.17.2_ubuntu24.04_amd64.deb"
+mavsdk_amd64_sha256 = "9a8c0e960b6cda8f1b09d522a3fd7ea214808ebca922c7ad482d1194243f8cc5"
+mavsdk_arm64_ubuntu24_04 = "deferred-to-phase-4-no-upstream-ubuntu24.04-arm64-deb"
+yaml_cpp = "ubuntu-24.04-apt"
+spdlog = "ubuntu-24.04-apt"
+googletest = "ubuntu-24.04-apt"
 
 # Every later selected dependency records source URL, version or commit,
 # architecture, and verification date.
