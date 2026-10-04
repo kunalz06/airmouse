@@ -30,10 +30,10 @@ constexpr std::uint8_t kMavlinkVersion = 3;
 std::uint16_t crc_accumulate(std::uint8_t data, std::uint16_t crc) {
   auto tmp = static_cast<std::uint8_t>(data ^ (crc & 0xFFU));
   tmp = static_cast<std::uint8_t>(tmp ^ (tmp << 4U));
-  return static_cast<std::uint16_t>(
-      (crc >> 8U) ^ (static_cast<std::uint16_t>(tmp) << 8U) ^
-      (static_cast<std::uint16_t>(tmp) << 3U) ^
-      (static_cast<std::uint16_t>(tmp) >> 4U));
+  return static_cast<std::uint16_t>((crc >> 8U) ^
+                                    (static_cast<std::uint16_t>(tmp) << 8U) ^
+                                    (static_cast<std::uint16_t>(tmp) << 3U) ^
+                                    (static_cast<std::uint16_t>(tmp) >> 4U));
 }
 
 std::array<std::uint8_t, 17> heartbeat_packet(std::uint8_t sequence,
