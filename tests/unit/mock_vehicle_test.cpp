@@ -58,6 +58,22 @@ TEST(MockVehicle, ExplicitReconnectStartsWithInvalidatedTelemetry) {
   EXPECT_EQ(snapshot.battery.validity, TelemetryValidity::Unavailable);
 }
 
+TEST(MockVehicle, InvalidFieldPreventsFreshSnapshot) {
+  MockVehicle vehicle;
+  ASSERT_EQ(vehicle.connect("udpin://127.0.0.1:14540", 1s),
+            VehicleConnectionResult::Connected);
+
+  const auto now = SteadyClock::now();
+  vehicle.publish_armed(true, now);
+  vehicle.publish_flight_mode(FlightMode::Hold, now);
+  vehicle.publish_battery(BatteryState{.voltage_volts = 15.2F}, now,
+                          TelemetryValidity::Invalid);
+
+  const auto snapshot = vehicle.telemetry_snapshot(1s);
+  EXPECT_EQ(snapshot.battery.validity, TelemetryValidity::Invalid);
+  EXPECT_FALSE(snapshot.required_fields_fresh(1s));
+}
+
 TEST(MockVehicle, StaleFieldIsNotUsable) {
   MockVehicle vehicle;
   ASSERT_EQ(vehicle.connect("udpin://127.0.0.1:14540", 1s),
