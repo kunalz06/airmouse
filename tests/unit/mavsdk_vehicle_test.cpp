@@ -116,7 +116,7 @@ TEST(MavsdkVehicle, EmptyListenerIsDiscoveryTimeout) {
 }
 
 TEST(MavsdkVehicle, RejectsNonPx4AutopilotDiscovery) {
-  auto sender = start_heartbeat_sender(49693, kArdupilotMega, 50ms, 400ms);
+  auto sender = start_heartbeat_sender(49693, kArdupilotMega, 30ms, 80ms);
   MavsdkVehicle vehicle;
 
   EXPECT_EQ(vehicle.connect("udpin://127.0.0.1:49693", 250ms),
