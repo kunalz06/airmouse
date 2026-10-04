@@ -176,7 +176,7 @@ class MavsdkVehicle::Impl {
     auto discovery = std::make_shared<DiscoverySignal>();
     {
       std::lock_guard lifecycle_lock(lifecycle_mutex_);
-      if (connecting_ || bundle_) {
+      if (connecting_ || tearing_down_ || bundle_) {
         return VehicleConnectionResult::AlreadyConnected;
       }
 
@@ -302,6 +302,7 @@ class MavsdkVehicle::Impl {
       }
 
       bundle = std::exchange(bundle_, nullptr);
+      tearing_down_ = bundle != nullptr;
 
       std::lock_guard state_lock(callback_state_->mutex);
       callback_state_->active = false;
@@ -313,6 +314,8 @@ class MavsdkVehicle::Impl {
 
     if (bundle) {
       bundle->shutdown();
+      std::lock_guard lifecycle_lock(lifecycle_mutex_);
+      tearing_down_ = false;
     }
   }
 
@@ -371,13 +374,15 @@ class MavsdkVehicle::Impl {
   }
 
   [[nodiscard]] std::string version() const {
-    std::shared_ptr<ConnectionBundle> bundle;
+    std::shared_ptr<mavsdk::Mavsdk> sdk;
     {
       std::lock_guard lifecycle_lock(lifecycle_mutex_);
-      bundle = bundle_;
+      if (bundle_) {
+        sdk = bundle_->sdk;
+      }
     }
-    if (bundle && bundle->sdk) {
-      return bundle->sdk->version();
+    if (sdk) {
+      return sdk->version();
     }
 
     auto configuration =
@@ -495,6 +500,7 @@ class MavsdkVehicle::Impl {
 
   mutable std::mutex lifecycle_mutex_;
   bool connecting_{false};
+  bool tearing_down_{false};
   std::shared_ptr<DiscoverySignal> discovery_;
   std::shared_ptr<ConnectionBundle> bundle_;
   std::shared_ptr<CallbackState> callback_state_;
