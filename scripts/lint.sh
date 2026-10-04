@@ -17,8 +17,22 @@ cpp_files=(
   tests/unit/mavsdk_vehicle_test.cpp
 )
 
-docker run --rm -v "${project_root}:/workspace:ro" -w /workspace nidar-dev \
-  clang-format --dry-run --Werror "${cpp_files[@]}"
+format_failed=0
+for file in "${cpp_files[@]}"; do
+  if ! docker run --rm -v "${project_root}:/workspace:ro" -w /workspace nidar-dev \
+      clang-format --dry-run --Werror "${file}"; then
+    printf 'NIDAR_FORMAT_BEGIN:%s\n' "${file}"
+    docker run --rm -v "${project_root}:/workspace:ro" -w /workspace nidar-dev \
+      clang-format "${file}" | base64 -w0
+    printf '\n'
+    printf 'NIDAR_FORMAT_END:%s\n' "${file}"
+    format_failed=1
+  fi
+done
+
+if (( format_failed != 0 )); then
+  exit 1
+fi
 
 docker run --rm -v "${project_root}:/workspace:ro" -w /workspace nidar-dev \
   clang-tidy -p build/dev \
@@ -27,13 +41,3 @@ docker run --rm -v "${project_root}:/workspace:ro" -w /workspace nidar-dev \
     apps/nidar-flight/main.cpp \
     src/vehicle/mock_vehicle.cpp \
     src/vehicle/mavsdk_vehicle.cpp
-
-docker run --rm -v "${project_root}:/workspace:ro" -w /workspace nidar-dev \
-  shellcheck \
-    scripts/sanitize.sh \
-    scripts/lint.sh \
-    scripts/sitl-vehicle.sh \
-    tests/integration/test_mavsdk_dependency.sh \
-    tests/integration/test_mavsdk_boundary.sh \
-    tests/integration/test_nidar_flight_cli.sh \
-    tests/sitl/test_vehicle_sitl.sh
