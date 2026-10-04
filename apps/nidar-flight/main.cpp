@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include "nidar/vehicle/mavsdk_vehicle.hpp"
 
