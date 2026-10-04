@@ -499,7 +499,8 @@ class MavsdkVehicle::Impl {
             [weak_state, generation](mavsdk::Telemetry::Battery battery) {
               if (const auto state = weak_state.lock()) {
                 std::lock_guard lock(state->mutex);
-                if (!state->active ||
+                if (state->generation != generation ||
+                    !state->active ||
                     state->connection != ConnectionState::Connected) {
                   return;
                 }
