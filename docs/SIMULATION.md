@@ -1,52 +1,69 @@
-# Phase 2 simulation
+# Simulation
 
-The Phase 2 simulator uses the pinned `nidar-px4-sim:v1.17.0-x500` image,
+The simulator uses the pinned `nidar-px4-sim:v1.17.0-x500` image,
 PX4 v1.17.0, Gazebo Harmonic, and the standard `gz_x500` vehicle.
 
 ## MAVLink topology
 
 | Purpose | PX4 localhost source | Host consumer bind | Ownership |
 |---|---:|---:|---|
-| QGroundControl observation | UDP 14551 | UDP 14550 | QGroundControl owns 14550 |
-| Passive SITL smoke | UDP 14561 | UDP 14560 | `sitl-smoke.py` owns 14560 |
+| QGroundControl | UDP 14551 | UDP 14550 | QGroundControl owns 14550 |
+| Passive Phase 2 smoke | UDP 14561 | UDP 14560 | `sitl-smoke.py` owns 14560 |
+| NIDAR Phase 3A vehicle adapter | upstream onboard link | UDP 14540 | `MavsdkVehicle` owns 14540 |
 
 `simulation/scripts/px4-rc.mavlink` is a read-only PX4 v1.17.0 startup
-overlay. It publishes the two localhost-only observer streams above. The
-smoke listener sends no MAVLink frames, requests no streams, and cannot alter
-parameters or vehicle state.
+overlay. The Phase 2 smoke process itself is receive-only: it sends no MAVLink
+frames, requests no streams, and issues no vehicle commands. The underlying
+PX4 UDP MAVLink transport is bidirectional, so safety is enforced by the
+consumer/application policy rather than by claiming the socket cannot receive
+traffic.
 
-## Headless smoke test
+## Phase 2 headless smoke
 
-Run this from the repository root:
+Run:
 
 ```bash
 scripts/sitl-headless.sh
 ```
 
-The script refuses occupied ports or an existing named container, waits at
-most 90 seconds by default, writes console output to
-`simulation/output/phase-2/`, and removes only the containers it starts. Set
-`NIDAR_SITL_TIMEOUT_SECONDS` to another positive bounded value when needed.
+The listener validates a PX4 heartbeat plus `LOCAL_POSITION_NED` within a
+bounded deadline and the launcher removes only the containers it created.
 
 ## Local GUI and QGroundControl
 
-In one terminal, start Gazebo:
+Run Gazebo:
 
 ```bash
 scripts/sitl-gui.sh
 ```
 
-In another terminal, start the host-installed QGroundControl application:
+Start the verified host QGroundControl separately. The GUI launcher uses a
+private temporary Xauthority cookie, read-only X11 mounts, host networking,
+and no privileged mode or host IPC.
+
+## Phase 3A vehicle telemetry
+
+Build the development image and application first:
 
 ```bash
-/opt/qgroundcontrol/QGroundControl.AppImage
+docker build --platform linux/amd64 -t nidar-dev -f docker/dev/Dockerfile .
+./scripts/configure.sh
+./scripts/build.sh
 ```
 
-QGroundControl receives the PX4 observer stream on UDP 14550. The GUI script
-requires a local `DISPLAY`, `xauth`, and `/tmp/.X11-unix`. It creates a
-temporary Xauthority file containing only the active display cookie, mounts
-that file and `/tmp/.X11-unix` read-only, and removes the temporary file at
-shutdown. It does not use `xhost +`, `--privileged`, or host IPC.
+Then run:
 
-These procedures are for simulation observation. They do not arm the vehicle,
-send MAVLink commands, modify PX4 parameters, or replace PX4 safety checks.
+```bash
+NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-vehicle.sh
+```
+
+The application identifies as a MAVSDK `CompanionComputer`, disables MAVSDK
+forwarding, binds only `udpin://127.0.0.1:14540`, accepts only a connected
+PX4 autopilot system, and requires fresh armed, flight-mode, and battery
+telemetry before success. Phase 3A instantiates no Action, Offboard, Mission,
+MissionRaw, or Param plugin and all command-shaped `IVehicle` methods are
+locally rejected with `RejectedByPhasePolicy`.
+
+The integration launcher checks that UDP 14540 is free before startup, uses a
+finite deadline, records logs under ignored `simulation/output/phase-3a/`,
+and removes only its own named containers.
