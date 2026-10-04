@@ -170,11 +170,21 @@ public:
     }
 
     auto discovery = std::make_shared<DiscoverySignal>();
+    std::shared_ptr<ConnectionBundle> stale_bundle;
     std::uint64_t generation{};
     {
       std::lock_guard lifecycle_lock(lifecycle_mutex_);
-      if (connecting_ || tearing_down_ || bundle_) {
+      if (connecting_ || tearing_down_) {
         return VehicleConnectionResult::AlreadyConnected;
+      }
+
+      if (bundle_) {
+        std::lock_guard state_lock(callback_state_->mutex);
+        if (callback_state_->connection == ConnectionState::Connected) {
+          return VehicleConnectionResult::AlreadyConnected;
+        }
+        stale_bundle = std::exchange(bundle_, nullptr);
+        tearing_down_ = true;
       }
 
       connecting_ = true;
@@ -185,6 +195,13 @@ public:
       callback_state_->connection = ConnectionState::Connecting;
       callback_state_->system_id.reset();
       invalidate(callback_state_->snapshot);
+    }
+
+    if (stale_bundle) {
+      stale_bundle->shutdown();
+      std::lock_guard lifecycle_lock(lifecycle_mutex_);
+      tearing_down_ = false;
+      lifecycle_condition_.notify_all();
     }
 
     if (is_cancelled(discovery)) {
