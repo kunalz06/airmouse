@@ -5,6 +5,7 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 sim_image="${NIDAR_SIM_IMAGE:-nidar-px4-sim:v1.17.0-x500}"
 dev_image="${NIDAR_DEV_IMAGE:-nidar-dev}"
+client_binary="${NIDAR_CLIENT_BINARY:-build/dev/nidar-flight}"
 timeout_seconds="${NIDAR_SITL_TIMEOUT_SECONDS:-90}"
 sim_name="nidar-sitl-vehicle-px4"
 client_name="nidar-sitl-vehicle-client"
@@ -61,8 +62,8 @@ if ! docker image inspect "${dev_image}" >/dev/null 2>&1; then
   echo "required development image is unavailable: ${dev_image}" >&2
   exit 2
 fi
-if [[ ! -x "${project_root}/build/dev/nidar-flight" ]]; then
-  echo "build/dev/nidar-flight is unavailable; run configure/build first" >&2
+if [[ ! -x "${project_root}/${client_binary}" ]]; then
+  echo "${client_binary} is unavailable; run the required build first" >&2
   exit 2
 fi
 if [[ ! -r "${overlay}" ]]; then
@@ -78,7 +79,7 @@ docker run --name "${sim_name}" --network host --init   -v "${overlay}:${px4_roo
 sim_pid=$!
 
 set +e
-docker run --rm --name "${client_name}" --network host --init   -v "${project_root}:/workspace:ro" -w /workspace   "${dev_image}"   build/dev/nidar-flight     --sim     --endpoint udpin://127.0.0.1:14540     --discovery-timeout-ms "$((timeout_seconds * 1000))"     --telemetry-max-age-ms 2000     --telemetry-wait-ms 15000   >"${client_log}" 2>&1
+docker run --rm --name "${client_name}" --network host --init   -v "${project_root}:/workspace:ro" -w /workspace   "${dev_image}"   "${client_binary}"     --sim     --endpoint udpin://127.0.0.1:14540     --discovery-timeout-ms "$((timeout_seconds * 1000))"     --telemetry-max-age-ms 2000     --telemetry-wait-ms 15000   >"${client_log}" 2>&1
 client_status=$?
 set -e
 

@@ -26,11 +26,13 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build --platform linux/amd64 -t nidar-dev -f docker/dev/Dockerfile .
       - run: ./scripts/configure.sh && ./scripts/build.sh
+      - run: ./scripts/sanitize.sh
       - run: docker build --progress=plain -t nidar-px4-sim:v1.17.0-x500 -f docker/sim/Dockerfile .
       - run: tests/sitl/test_sitl_smoke.sh
       - run: NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-headless.sh
       - run: tests/sitl/test_vehicle_sitl.sh --occupied-port
       - run: NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-vehicle.sh
+      - run: NIDAR_CLIENT_BINARY=build/test/nidar-flight NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-vehicle.sh
       - run: ./scripts/docker-disk-report.sh
 
 # linux/arm64 runtime packaging is intentionally deferred to Phase 4.
