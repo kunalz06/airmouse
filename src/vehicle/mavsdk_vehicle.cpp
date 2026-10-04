@@ -267,23 +267,29 @@ class MavsdkVehicle::Impl {
     {
       std::lock_guard lifecycle_lock(lifecycle_mutex_);
       if (discovery_ == discovery && !is_cancelled(discovery)) {
-        bundle_ = bundle;
-        connecting_ = false;
-        discovery_.reset();
-
         std::lock_guard state_lock(callback_state_->mutex);
-        callback_state_->active = true;
-        callback_state_->connection = ConnectionState::Connected;
-        callback_state_->system_id = bundle->system->get_system_id();
-        invalidate(callback_state_->snapshot);
-        callback_state_->condition.notify_all();
-        committed = true;
+        if (callback_state_->connection == ConnectionState::Connecting) {
+          bundle_ = bundle;
+          connecting_ = false;
+          discovery_.reset();
+
+          callback_state_->active = true;
+          callback_state_->connection = ConnectionState::Connected;
+          callback_state_->system_id = bundle->system->get_system_id();
+          invalidate(callback_state_->snapshot);
+          callback_state_->condition.notify_all();
+          committed = true;
+        }
       }
     }
 
     if (!committed) {
-      bundle->shutdown();
-      return VehicleConnectionResult::Cancelled;
+      return finish_failed_connect(
+          discovery,
+          bundle,
+          is_cancelled(discovery)
+              ? VehicleConnectionResult::Cancelled
+              : VehicleConnectionResult::TransportFailure);
     }
 
     return VehicleConnectionResult::Connected;
@@ -402,6 +408,7 @@ class MavsdkVehicle::Impl {
       if (discovery_ == discovery) {
         connecting_ = false;
         discovery_.reset();
+        tearing_down_ = bundle != nullptr;
         current = true;
       }
     }
@@ -417,6 +424,10 @@ class MavsdkVehicle::Impl {
 
     if (bundle) {
       bundle->shutdown();
+      if (current) {
+        std::lock_guard lifecycle_lock(lifecycle_mutex_);
+        tearing_down_ = false;
+      }
     }
     return result;
   }
@@ -431,9 +442,6 @@ class MavsdkVehicle::Impl {
           }
           if (const auto state = weak_state.lock()) {
             std::lock_guard lock(state->mutex);
-            if (!state->active) {
-              return;
-            }
             state->connection = ConnectionState::Disconnected;
             state->system_id.reset();
             invalidate(state->snapshot);
