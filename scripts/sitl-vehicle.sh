@@ -95,6 +95,9 @@ grep -Fx "component=companion-computer" "${client_log}" >/dev/null
 grep -Fx "forwarding=off" "${client_log}" >/dev/null
 grep -Fx "telemetry=ready" "${client_log}" >/dev/null
 
+echo "Phase 3A client diagnostics:"
+cat "${client_log}"
+
 docker stop --time 10 "${sim_name}" >/dev/null || true
 wait "${sim_pid}" || true
 docker rm "${sim_name}" >/dev/null 2>&1 || true
