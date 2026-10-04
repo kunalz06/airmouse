@@ -275,6 +275,7 @@ public:
           callback_state_->system_id = bundle->system->get_system_id();
           invalidate(callback_state_->snapshot);
           callback_state_->condition.notify_all();
+          lifecycle_condition_.notify_all();
           committed = true;
         }
       }
@@ -293,7 +294,7 @@ public:
   void disconnect() noexcept {
     std::shared_ptr<ConnectionBundle> bundle;
     {
-      std::lock_guard lifecycle_lock(lifecycle_mutex_);
+      std::unique_lock lifecycle_lock(lifecycle_mutex_);
 
       if (discovery_) {
         std::lock_guard discovery_lock(discovery_->mutex);
@@ -301,6 +302,10 @@ public:
         discovery_->changed = true;
         discovery_->condition.notify_all();
       }
+
+      lifecycle_condition_.wait(lifecycle_lock, [this] {
+        return !connecting_ && !tearing_down_;
+      });
 
       bundle = std::exchange(bundle_, nullptr);
       tearing_down_ = bundle != nullptr;
@@ -318,6 +323,7 @@ public:
       bundle->shutdown();
       std::lock_guard lifecycle_lock(lifecycle_mutex_);
       tearing_down_ = false;
+      lifecycle_condition_.notify_all();
     }
   }
 
@@ -405,6 +411,9 @@ private:
         discovery_.reset();
         tearing_down_ = bundle != nullptr;
         current = true;
+        if (!tearing_down_) {
+          lifecycle_condition_.notify_all();
+        }
       }
     }
 
@@ -420,10 +429,12 @@ private:
 
     if (bundle) {
       bundle->shutdown();
-      if (current) {
-        std::lock_guard lifecycle_lock(lifecycle_mutex_);
-        tearing_down_ = false;
-      }
+    }
+
+    if (current) {
+      std::lock_guard lifecycle_lock(lifecycle_mutex_);
+      tearing_down_ = false;
+      lifecycle_condition_.notify_all();
     }
     return result;
   }
@@ -503,6 +514,7 @@ private:
   }
 
   mutable std::mutex lifecycle_mutex_;
+  std::condition_variable lifecycle_condition_;
   bool connecting_{false};
   bool tearing_down_{false};
   std::shared_ptr<DiscoverySignal> discovery_;
