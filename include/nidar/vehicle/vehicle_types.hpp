@@ -74,8 +74,7 @@ struct VelocityTargetNed {
   double yaw_deg{};
 };
 
-template <typename T>
-struct TelemetryField {
+template <typename T> struct TelemetryField {
   T value{};
   TelemetryValidity validity{TelemetryValidity::Unavailable};
   SteadyTimePoint last_update{};
@@ -87,12 +86,13 @@ struct TelemetrySnapshot {
   TelemetryField<FlightMode> flight_mode{};
   TelemetryField<BatteryState> battery{};
 
-  [[nodiscard]] bool required_fields_fresh(std::chrono::milliseconds max_age) const {
+  [[nodiscard]] bool
+  required_fields_fresh(std::chrono::milliseconds max_age) const {
     if (max_age <= std::chrono::milliseconds::zero()) {
       return false;
     }
 
-    const auto fresh = [this, max_age](const auto& field) {
+    const auto fresh = [this, max_age](const auto &field) {
       return field.validity == TelemetryValidity::Valid &&
              field.last_update != SteadyTimePoint{} &&
              field.last_update <= assembled_at &&
@@ -103,4 +103,4 @@ struct TelemetrySnapshot {
   }
 };
 
-}  // namespace nidar::vehicle
+} // namespace nidar::vehicle

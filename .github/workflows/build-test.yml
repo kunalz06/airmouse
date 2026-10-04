@@ -15,7 +15,6 @@ jobs:
       - run: ./scripts/sanitize.sh
 
   sitl:
-    if: false
     runs-on: ubuntu-24.04
     timeout-minutes: 80
     steps:

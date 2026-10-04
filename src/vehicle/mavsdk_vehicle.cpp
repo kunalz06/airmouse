@@ -21,30 +21,26 @@ namespace nidar::vehicle {
 namespace {
 
 template <typename T>
-void mark_stale(
-    TelemetryField<T>& field,
-    SteadyTimePoint now,
-    std::chrono::milliseconds max_age) {
+void mark_stale(TelemetryField<T> &field, SteadyTimePoint now,
+                std::chrono::milliseconds max_age) {
   if (field.validity != TelemetryValidity::Valid) {
     return;
   }
   if (max_age <= std::chrono::milliseconds::zero() ||
-      field.last_update == SteadyTimePoint{} ||
-      field.last_update > now ||
+      field.last_update == SteadyTimePoint{} || field.last_update > now ||
       now - field.last_update > max_age) {
     field.validity = TelemetryValidity::Stale;
   }
 }
 
-void invalidate(TelemetrySnapshot& snapshot) {
+void invalidate(TelemetrySnapshot &snapshot) {
   snapshot.armed.validity = TelemetryValidity::Unavailable;
   snapshot.flight_mode.validity = TelemetryValidity::Unavailable;
   snapshot.battery.validity = TelemetryValidity::Unavailable;
 }
 
-void apply_freshness(
-    TelemetrySnapshot& snapshot,
-    std::chrono::milliseconds max_age) {
+void apply_freshness(TelemetrySnapshot &snapshot,
+                     std::chrono::milliseconds max_age) {
   mark_stale(snapshot.armed, snapshot.assembled_at, max_age);
   mark_stale(snapshot.flight_mode, snapshot.assembled_at, max_age);
   mark_stale(snapshot.battery, snapshot.assembled_at, max_age);
@@ -52,37 +48,37 @@ void apply_freshness(
 
 FlightMode map_flight_mode(mavsdk::Telemetry::FlightMode mode) {
   switch (mode) {
-    case mavsdk::Telemetry::FlightMode::Ready:
-      return FlightMode::Ready;
-    case mavsdk::Telemetry::FlightMode::Takeoff:
-      return FlightMode::Takeoff;
-    case mavsdk::Telemetry::FlightMode::Hold:
-      return FlightMode::Hold;
-    case mavsdk::Telemetry::FlightMode::Mission:
-      return FlightMode::Mission;
-    case mavsdk::Telemetry::FlightMode::ReturnToLaunch:
-      return FlightMode::ReturnToLaunch;
-    case mavsdk::Telemetry::FlightMode::Land:
-      return FlightMode::Land;
-    case mavsdk::Telemetry::FlightMode::Offboard:
-      return FlightMode::Offboard;
-    case mavsdk::Telemetry::FlightMode::FollowMe:
-      return FlightMode::FollowMe;
-    case mavsdk::Telemetry::FlightMode::Manual:
-      return FlightMode::Manual;
-    case mavsdk::Telemetry::FlightMode::Altctl:
-      return FlightMode::AltitudeControl;
-    case mavsdk::Telemetry::FlightMode::Posctl:
-      return FlightMode::PositionControl;
-    case mavsdk::Telemetry::FlightMode::Acro:
-      return FlightMode::Acro;
-    case mavsdk::Telemetry::FlightMode::Stabilized:
-      return FlightMode::Stabilized;
-    case mavsdk::Telemetry::FlightMode::Rattitude:
-      return FlightMode::Rattitude;
-    case mavsdk::Telemetry::FlightMode::Unknown:
-    default:
-      return FlightMode::Unknown;
+  case mavsdk::Telemetry::FlightMode::Ready:
+    return FlightMode::Ready;
+  case mavsdk::Telemetry::FlightMode::Takeoff:
+    return FlightMode::Takeoff;
+  case mavsdk::Telemetry::FlightMode::Hold:
+    return FlightMode::Hold;
+  case mavsdk::Telemetry::FlightMode::Mission:
+    return FlightMode::Mission;
+  case mavsdk::Telemetry::FlightMode::ReturnToLaunch:
+    return FlightMode::ReturnToLaunch;
+  case mavsdk::Telemetry::FlightMode::Land:
+    return FlightMode::Land;
+  case mavsdk::Telemetry::FlightMode::Offboard:
+    return FlightMode::Offboard;
+  case mavsdk::Telemetry::FlightMode::FollowMe:
+    return FlightMode::FollowMe;
+  case mavsdk::Telemetry::FlightMode::Manual:
+    return FlightMode::Manual;
+  case mavsdk::Telemetry::FlightMode::Altctl:
+    return FlightMode::AltitudeControl;
+  case mavsdk::Telemetry::FlightMode::Posctl:
+    return FlightMode::PositionControl;
+  case mavsdk::Telemetry::FlightMode::Acro:
+    return FlightMode::Acro;
+  case mavsdk::Telemetry::FlightMode::Stabilized:
+    return FlightMode::Stabilized;
+  case mavsdk::Telemetry::FlightMode::Rattitude:
+    return FlightMode::Rattitude;
+  case mavsdk::Telemetry::FlightMode::Unknown:
+  default:
+    return FlightMode::Unknown;
   }
 }
 
@@ -97,15 +93,15 @@ struct DiscoverySignal {
   bool cancelled{false};
 };
 
-bool is_cancelled(const std::shared_ptr<DiscoverySignal>& signal) {
+bool is_cancelled(const std::shared_ptr<DiscoverySignal> &signal) {
   std::lock_guard lock(signal->mutex);
   return signal->cancelled;
 }
 
-}  // namespace
+} // namespace
 
 class MavsdkVehicle::Impl {
- public:
+public:
   struct CallbackState {
     mutable std::mutex mutex;
     std::condition_variable condition;
@@ -166,9 +162,8 @@ class MavsdkVehicle::Impl {
   Impl() : callback_state_(std::make_shared<CallbackState>()) {}
   ~Impl() { disconnect(); }
 
-  VehicleConnectionResult connect(
-      std::string_view endpoint,
-      std::chrono::milliseconds discovery_timeout) {
+  VehicleConnectionResult connect(std::string_view endpoint,
+                                  std::chrono::milliseconds discovery_timeout) {
     if (endpoint.empty() ||
         discovery_timeout <= std::chrono::milliseconds::zero()) {
       return VehicleConnectionResult::InvalidArgument;
@@ -193,8 +188,8 @@ class MavsdkVehicle::Impl {
     }
 
     if (is_cancelled(discovery)) {
-      return finish_failed_connect(
-          discovery, nullptr, VehicleConnectionResult::Cancelled);
+      return finish_failed_connect(discovery, nullptr,
+                                   VehicleConnectionResult::Cancelled);
     }
 
     auto bundle = std::make_shared<ConnectionBundle>();
@@ -207,11 +202,9 @@ class MavsdkVehicle::Impl {
             std::string(endpoint), mavsdk::ForwardingOption::ForwardingOff);
     if (connection_result != mavsdk::ConnectionResult::Success) {
       return finish_failed_connect(
-          discovery,
-          bundle,
-          is_cancelled(discovery)
-              ? VehicleConnectionResult::Cancelled
-              : VehicleConnectionResult::TransportFailure);
+          discovery, bundle,
+          is_cancelled(discovery) ? VehicleConnectionResult::Cancelled
+                                  : VehicleConnectionResult::TransportFailure);
     }
     bundle->connection_handle = connection_handle;
 
@@ -230,8 +223,8 @@ class MavsdkVehicle::Impl {
 
     const auto find_px4 = [&bundle]() -> std::shared_ptr<mavsdk::System> {
       const auto systems = bundle->sdk->systems();
-      const auto found = std::find_if(
-          systems.begin(), systems.end(), [](const auto& system) {
+      const auto found =
+          std::find_if(systems.begin(), systems.end(), [](const auto &system) {
             return system && system->is_connected() &&
                    system->has_autopilot() &&
                    system->autopilot_type() == mavsdk::Autopilot::Px4;
@@ -241,8 +234,8 @@ class MavsdkVehicle::Impl {
 
     while (!is_cancelled(discovery) && !(selected = find_px4())) {
       std::unique_lock signal_lock(discovery->mutex);
-      const bool signalled = discovery->condition.wait_until(
-          signal_lock, deadline, [&discovery] {
+      const bool signalled =
+          discovery->condition.wait_until(signal_lock, deadline, [&discovery] {
             return discovery->changed || discovery->cancelled;
           });
       if (!signalled) {
@@ -254,12 +247,12 @@ class MavsdkVehicle::Impl {
     bundle->sdk->unsubscribe_on_new_system(discovery_handle);
 
     if (is_cancelled(discovery)) {
-      return finish_failed_connect(
-          discovery, bundle, VehicleConnectionResult::Cancelled);
+      return finish_failed_connect(discovery, bundle,
+                                   VehicleConnectionResult::Cancelled);
     }
     if (!selected) {
-      return finish_failed_connect(
-          discovery, bundle, VehicleConnectionResult::DiscoveryTimeout);
+      return finish_failed_connect(discovery, bundle,
+                                   VehicleConnectionResult::DiscoveryTimeout);
     }
 
     bundle->system = std::move(selected);
@@ -289,11 +282,9 @@ class MavsdkVehicle::Impl {
 
     if (!committed) {
       return finish_failed_connect(
-          discovery,
-          bundle,
-          is_cancelled(discovery)
-              ? VehicleConnectionResult::Cancelled
-              : VehicleConnectionResult::TransportFailure);
+          discovery, bundle,
+          is_cancelled(discovery) ? VehicleConnectionResult::Cancelled
+                                  : VehicleConnectionResult::TransportFailure);
     }
 
     return VehicleConnectionResult::Connected;
@@ -342,8 +333,8 @@ class MavsdkVehicle::Impl {
                : std::nullopt;
   }
 
-  [[nodiscard]] TelemetrySnapshot telemetry_snapshot(
-      std::chrono::milliseconds max_age) const {
+  [[nodiscard]] TelemetrySnapshot
+  telemetry_snapshot(std::chrono::milliseconds max_age) const {
     std::lock_guard lock(callback_state_->mutex);
     auto copy = callback_state_->snapshot;
     copy.assembled_at = SteadyClock::now();
@@ -351,9 +342,8 @@ class MavsdkVehicle::Impl {
     return copy;
   }
 
-  bool wait_for_required_telemetry(
-      std::chrono::milliseconds max_age,
-      std::chrono::milliseconds timeout) {
+  bool wait_for_required_telemetry(std::chrono::milliseconds max_age,
+                                   std::chrono::milliseconds timeout) {
     if (max_age <= std::chrono::milliseconds::zero() ||
         timeout <= std::chrono::milliseconds::zero()) {
       return false;
@@ -402,11 +392,11 @@ class MavsdkVehicle::Impl {
     return local_sdk.version();
   }
 
- private:
-  VehicleConnectionResult finish_failed_connect(
-      const std::shared_ptr<DiscoverySignal>& discovery,
-      const std::shared_ptr<ConnectionBundle>& bundle,
-      VehicleConnectionResult result) {
+private:
+  VehicleConnectionResult
+  finish_failed_connect(const std::shared_ptr<DiscoverySignal> &discovery,
+                        const std::shared_ptr<ConnectionBundle> &bundle,
+                        VehicleConnectionResult result) {
     bool current = false;
     {
       std::lock_guard lifecycle_lock(lifecycle_mutex_);
@@ -438,14 +428,11 @@ class MavsdkVehicle::Impl {
     return result;
   }
 
-  void subscribe_callbacks(
-      ConnectionBundle& bundle,
-      std::uint64_t generation) {
+  void subscribe_callbacks(ConnectionBundle &bundle, std::uint64_t generation) {
     const std::weak_ptr<CallbackState> weak_state = callback_state_;
 
-    bundle.is_connected_handle =
-        bundle.system->subscribe_is_connected(
-            [weak_state, generation](bool connected) {
+    bundle.is_connected_handle = bundle.system->subscribe_is_connected(
+        [weak_state, generation](bool connected) {
           if (connected) {
             return;
           }
@@ -462,17 +449,15 @@ class MavsdkVehicle::Impl {
         });
 
     bundle.armed_handle =
-        bundle.telemetry->subscribe_armed(
-            [weak_state, generation](bool armed) {
+        bundle.telemetry->subscribe_armed([weak_state, generation](bool armed) {
           if (const auto state = weak_state.lock()) {
             std::lock_guard lock(state->mutex);
-            if (state->generation != generation ||
-                !state->active ||
+            if (state->generation != generation || !state->active ||
                 state->connection != ConnectionState::Connected) {
               return;
             }
-            state->snapshot.armed = {
-                armed, TelemetryValidity::Valid, SteadyClock::now()};
+            state->snapshot.armed = {armed, TelemetryValidity::Valid,
+                                     SteadyClock::now()};
             state->condition.notify_all();
           }
         });
@@ -481,45 +466,40 @@ class MavsdkVehicle::Impl {
         [weak_state, generation](mavsdk::Telemetry::FlightMode mode) {
           if (const auto state = weak_state.lock()) {
             std::lock_guard lock(state->mutex);
-            if (state->generation != generation ||
-                !state->active ||
+            if (state->generation != generation || !state->active ||
                 state->connection != ConnectionState::Connected) {
               return;
             }
-            state->snapshot.flight_mode = {
-                map_flight_mode(mode),
-                TelemetryValidity::Valid,
-                SteadyClock::now()};
+            state->snapshot.flight_mode = {map_flight_mode(mode),
+                                           TelemetryValidity::Valid,
+                                           SteadyClock::now()};
             state->condition.notify_all();
           }
         });
 
-    bundle.battery_handle =
-        bundle.telemetry->subscribe_battery(
-            [weak_state, generation](mavsdk::Telemetry::Battery battery) {
-              if (const auto state = weak_state.lock()) {
-                std::lock_guard lock(state->mutex);
-                if (state->generation != generation ||
-                    !state->active ||
-                    state->connection != ConnectionState::Connected) {
-                  return;
-                }
+    bundle.battery_handle = bundle.telemetry->subscribe_battery(
+        [weak_state, generation](mavsdk::Telemetry::Battery battery) {
+          if (const auto state = weak_state.lock()) {
+            std::lock_guard lock(state->mutex);
+            if (state->generation != generation || !state->active ||
+                state->connection != ConnectionState::Connected) {
+              return;
+            }
 
-                const bool valid_voltage =
-                    std::isfinite(battery.voltage_v) &&
-                    battery.voltage_v > 0.0F;
-                state->snapshot.battery = {
-                    BatteryState{
-                        .voltage_volts = battery.voltage_v,
-                        .current_amps = battery.current_battery_a,
-                        .remaining_percent = battery.remaining_percent,
-                    },
-                    valid_voltage ? TelemetryValidity::Valid
-                                  : TelemetryValidity::Invalid,
-                    SteadyClock::now()};
-                state->condition.notify_all();
-              }
-            });
+            const bool valid_voltage =
+                std::isfinite(battery.voltage_v) && battery.voltage_v > 0.0F;
+            state->snapshot.battery = {
+                BatteryState{
+                    .voltage_volts = battery.voltage_v,
+                    .current_amps = battery.current_battery_a,
+                    .remaining_percent = battery.remaining_percent,
+                },
+                valid_voltage ? TelemetryValidity::Valid
+                              : TelemetryValidity::Invalid,
+                SteadyClock::now()};
+            state->condition.notify_all();
+          }
+        });
   }
 
   mutable std::mutex lifecycle_mutex_;
@@ -533,15 +513,13 @@ class MavsdkVehicle::Impl {
 MavsdkVehicle::MavsdkVehicle() : impl_(std::make_unique<Impl>()) {}
 MavsdkVehicle::~MavsdkVehicle() = default;
 
-VehicleConnectionResult MavsdkVehicle::connect(
-    std::string_view endpoint,
-    std::chrono::milliseconds discovery_timeout) {
+VehicleConnectionResult
+MavsdkVehicle::connect(std::string_view endpoint,
+                       std::chrono::milliseconds discovery_timeout) {
   return impl_->connect(endpoint, discovery_timeout);
 }
 
-void MavsdkVehicle::disconnect() noexcept {
-  impl_->disconnect();
-}
+void MavsdkVehicle::disconnect() noexcept { impl_->disconnect(); }
 
 ConnectionState MavsdkVehicle::connection_status() const {
   return impl_->connection_status();
@@ -551,14 +529,13 @@ std::optional<std::uint8_t> MavsdkVehicle::system_id() const {
   return impl_->system_id();
 }
 
-TelemetrySnapshot MavsdkVehicle::telemetry_snapshot(
-    std::chrono::milliseconds max_age) const {
+TelemetrySnapshot
+MavsdkVehicle::telemetry_snapshot(std::chrono::milliseconds max_age) const {
   return impl_->telemetry_snapshot(max_age);
 }
 
 bool MavsdkVehicle::wait_for_required_telemetry(
-    std::chrono::milliseconds max_age,
-    std::chrono::milliseconds timeout) {
+    std::chrono::milliseconds max_age, std::chrono::milliseconds timeout) {
   return impl_->wait_for_required_telemetry(max_age, timeout);
 }
 
@@ -570,9 +547,7 @@ VehicleCommandResult MavsdkVehicle::disarm(std::chrono::milliseconds) {
   return reject_command();
 }
 
-VehicleCommandResult MavsdkVehicle::takeoff(
-    double,
-    std::chrono::milliseconds) {
+VehicleCommandResult MavsdkVehicle::takeoff(double, std::chrono::milliseconds) {
   return reject_command();
 }
 
@@ -592,20 +567,18 @@ VehicleCommandResult MavsdkVehicle::stop_offboard(std::chrono::milliseconds) {
   return reject_command();
 }
 
-VehicleCommandResult MavsdkVehicle::set_position_target(
-    const PositionTargetNed&,
-    std::chrono::milliseconds) {
+VehicleCommandResult
+MavsdkVehicle::set_position_target(const PositionTargetNed &,
+                                   std::chrono::milliseconds) {
   return reject_command();
 }
 
-VehicleCommandResult MavsdkVehicle::set_velocity_target(
-    const VelocityTargetNed&,
-    std::chrono::milliseconds) {
+VehicleCommandResult
+MavsdkVehicle::set_velocity_target(const VelocityTargetNed &,
+                                   std::chrono::milliseconds) {
   return reject_command();
 }
 
-std::string MavsdkVehicle::mavsdk_version() const {
-  return impl_->version();
-}
+std::string MavsdkVehicle::mavsdk_version() const { return impl_->version(); }
 
-}  // namespace nidar::vehicle
+} // namespace nidar::vehicle

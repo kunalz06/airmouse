@@ -6,16 +6,13 @@ namespace nidar::vehicle {
 namespace {
 
 template <typename T>
-void mark_stale(
-    TelemetryField<T>& field,
-    SteadyTimePoint now,
-    std::chrono::milliseconds max_age) {
+void mark_stale(TelemetryField<T> &field, SteadyTimePoint now,
+                std::chrono::milliseconds max_age) {
   if (field.validity != TelemetryValidity::Valid) {
     return;
   }
   if (max_age <= std::chrono::milliseconds::zero() ||
-      field.last_update == SteadyTimePoint{} ||
-      field.last_update > now ||
+      field.last_update == SteadyTimePoint{} || field.last_update > now ||
       now - field.last_update > max_age) {
     field.validity = TelemetryValidity::Stale;
   }
@@ -25,13 +22,14 @@ VehicleCommandResult reject_command() {
   return VehicleCommandResult::RejectedByPhasePolicy;
 }
 
-}  // namespace
+} // namespace
 
-VehicleConnectionResult MockVehicle::connect(
-    std::string_view endpoint,
-    std::chrono::milliseconds discovery_timeout) {
+VehicleConnectionResult
+MockVehicle::connect(std::string_view endpoint,
+                     std::chrono::milliseconds discovery_timeout) {
   std::lock_guard lock(mutex_);
-  if (endpoint.empty() || discovery_timeout <= std::chrono::milliseconds::zero()) {
+  if (endpoint.empty() ||
+      discovery_timeout <= std::chrono::milliseconds::zero()) {
     return VehicleConnectionResult::InvalidArgument;
   }
   if (state_ == ConnectionState::Connected) {
@@ -66,8 +64,8 @@ std::optional<std::uint8_t> MockVehicle::system_id() const {
   return state_ == ConnectionState::Connected ? system_id_ : std::nullopt;
 }
 
-TelemetrySnapshot MockVehicle::telemetry_snapshot(
-    std::chrono::milliseconds max_age) const {
+TelemetrySnapshot
+MockVehicle::telemetry_snapshot(std::chrono::milliseconds max_age) const {
   std::lock_guard lock(mutex_);
   auto copy = snapshot_;
   copy.assembled_at = SteadyClock::now();
@@ -76,8 +74,7 @@ TelemetrySnapshot MockVehicle::telemetry_snapshot(
 }
 
 bool MockVehicle::wait_for_required_telemetry(
-    std::chrono::milliseconds max_age,
-    std::chrono::milliseconds timeout) {
+    std::chrono::milliseconds max_age, std::chrono::milliseconds timeout) {
   if (max_age <= std::chrono::milliseconds::zero() ||
       timeout <= std::chrono::milliseconds::zero()) {
     return false;
@@ -104,17 +101,35 @@ bool MockVehicle::wait_for_required_telemetry(
   return copy.required_fields_fresh(max_age);
 }
 
-VehicleCommandResult MockVehicle::arm(std::chrono::milliseconds) { return reject_command(); }
-VehicleCommandResult MockVehicle::disarm(std::chrono::milliseconds) { return reject_command(); }
-VehicleCommandResult MockVehicle::takeoff(double, std::chrono::milliseconds) { return reject_command(); }
-VehicleCommandResult MockVehicle::land(std::chrono::milliseconds) { return reject_command(); }
-VehicleCommandResult MockVehicle::hold(std::chrono::milliseconds) { return reject_command(); }
-VehicleCommandResult MockVehicle::start_offboard(std::chrono::milliseconds) { return reject_command(); }
-VehicleCommandResult MockVehicle::stop_offboard(std::chrono::milliseconds) { return reject_command(); }
-VehicleCommandResult MockVehicle::set_position_target(const PositionTargetNed&, std::chrono::milliseconds) {
+VehicleCommandResult MockVehicle::arm(std::chrono::milliseconds) {
   return reject_command();
 }
-VehicleCommandResult MockVehicle::set_velocity_target(const VelocityTargetNed&, std::chrono::milliseconds) {
+VehicleCommandResult MockVehicle::disarm(std::chrono::milliseconds) {
+  return reject_command();
+}
+VehicleCommandResult MockVehicle::takeoff(double, std::chrono::milliseconds) {
+  return reject_command();
+}
+VehicleCommandResult MockVehicle::land(std::chrono::milliseconds) {
+  return reject_command();
+}
+VehicleCommandResult MockVehicle::hold(std::chrono::milliseconds) {
+  return reject_command();
+}
+VehicleCommandResult MockVehicle::start_offboard(std::chrono::milliseconds) {
+  return reject_command();
+}
+VehicleCommandResult MockVehicle::stop_offboard(std::chrono::milliseconds) {
+  return reject_command();
+}
+VehicleCommandResult
+MockVehicle::set_position_target(const PositionTargetNed &,
+                                 std::chrono::milliseconds) {
+  return reject_command();
+}
+VehicleCommandResult
+MockVehicle::set_velocity_target(const VelocityTargetNed &,
+                                 std::chrono::milliseconds) {
   return reject_command();
 }
 
@@ -134,30 +149,31 @@ void MockVehicle::publish_armed(bool armed, SteadyTimePoint timestamp) {
   condition_.notify_all();
 }
 
-void MockVehicle::publish_flight_mode(FlightMode mode, SteadyTimePoint timestamp) {
+void MockVehicle::publish_flight_mode(FlightMode mode,
+                                      SteadyTimePoint timestamp) {
   std::lock_guard lock(mutex_);
   snapshot_.flight_mode = {mode, TelemetryValidity::Valid, timestamp};
   condition_.notify_all();
 }
 
-void MockVehicle::publish_battery(BatteryState battery, SteadyTimePoint timestamp) {
+void MockVehicle::publish_battery(BatteryState battery,
+                                  SteadyTimePoint timestamp) {
   std::lock_guard lock(mutex_);
   snapshot_.battery = {std::move(battery), TelemetryValidity::Valid, timestamp};
   condition_.notify_all();
 }
 
-void MockVehicle::invalidate(TelemetrySnapshot& snapshot) {
+void MockVehicle::invalidate(TelemetrySnapshot &snapshot) {
   snapshot.armed.validity = TelemetryValidity::Unavailable;
   snapshot.flight_mode.validity = TelemetryValidity::Unavailable;
   snapshot.battery.validity = TelemetryValidity::Unavailable;
 }
 
-void MockVehicle::apply_freshness(
-    TelemetrySnapshot& snapshot,
-    std::chrono::milliseconds max_age) {
+void MockVehicle::apply_freshness(TelemetrySnapshot &snapshot,
+                                  std::chrono::milliseconds max_age) {
   mark_stale(snapshot.armed, snapshot.assembled_at, max_age);
   mark_stale(snapshot.flight_mode, snapshot.assembled_at, max_age);
   mark_stale(snapshot.battery, snapshot.assembled_at, max_age);
 }
 
-}  // namespace nidar::vehicle
+} // namespace nidar::vehicle
