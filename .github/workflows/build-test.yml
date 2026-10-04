@@ -1,6 +1,10 @@
 name: build-test
 on: [push, pull_request]
 
+concurrency:
+  group: build-test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   amd64:
     runs-on: ubuntu-24.04
