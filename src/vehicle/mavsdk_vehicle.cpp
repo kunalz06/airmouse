@@ -110,6 +110,7 @@ class MavsdkVehicle::Impl {
     mutable std::mutex mutex;
     std::condition_variable condition;
     bool active{false};
+    std::uint64_t generation{0};
     ConnectionState connection{ConnectionState::Disconnected};
     std::optional<std::uint8_t> system_id;
     TelemetrySnapshot snapshot{};
@@ -174,6 +175,7 @@ class MavsdkVehicle::Impl {
     }
 
     auto discovery = std::make_shared<DiscoverySignal>();
+    std::uint64_t generation{};
     {
       std::lock_guard lifecycle_lock(lifecycle_mutex_);
       if (connecting_ || tearing_down_ || bundle_) {
@@ -183,6 +185,7 @@ class MavsdkVehicle::Impl {
       connecting_ = true;
       discovery_ = discovery;
       std::lock_guard state_lock(callback_state_->mutex);
+      generation = ++callback_state_->generation;
       callback_state_->active = false;
       callback_state_->connection = ConnectionState::Connecting;
       callback_state_->system_id.reset();
@@ -261,14 +264,15 @@ class MavsdkVehicle::Impl {
 
     bundle->system = std::move(selected);
     bundle->telemetry = std::make_unique<mavsdk::Telemetry>(bundle->system);
-    subscribe_callbacks(*bundle);
+    subscribe_callbacks(*bundle, generation);
 
     bool committed = false;
     {
       std::lock_guard lifecycle_lock(lifecycle_mutex_);
       if (discovery_ == discovery && !is_cancelled(discovery)) {
         std::lock_guard state_lock(callback_state_->mutex);
-        if (callback_state_->connection == ConnectionState::Connecting) {
+        if (callback_state_->generation == generation &&
+            callback_state_->connection == ConnectionState::Connecting) {
           bundle_ = bundle;
           connecting_ = false;
           discovery_.reset();
@@ -311,6 +315,7 @@ class MavsdkVehicle::Impl {
       tearing_down_ = bundle != nullptr;
 
       std::lock_guard state_lock(callback_state_->mutex);
+      ++callback_state_->generation;
       callback_state_->active = false;
       callback_state_->connection = ConnectionState::Disconnected;
       callback_state_->system_id.reset();
@@ -415,6 +420,7 @@ class MavsdkVehicle::Impl {
 
     if (current) {
       std::lock_guard state_lock(callback_state_->mutex);
+      ++callback_state_->generation;
       callback_state_->active = false;
       callback_state_->connection = ConnectionState::Disconnected;
       callback_state_->system_id.reset();
@@ -432,16 +438,22 @@ class MavsdkVehicle::Impl {
     return result;
   }
 
-  void subscribe_callbacks(ConnectionBundle& bundle) {
+  void subscribe_callbacks(
+      ConnectionBundle& bundle,
+      std::uint64_t generation) {
     const std::weak_ptr<CallbackState> weak_state = callback_state_;
 
     bundle.is_connected_handle =
-        bundle.system->subscribe_is_connected([weak_state](bool connected) {
+        bundle.system->subscribe_is_connected(
+            [weak_state, generation](bool connected) {
           if (connected) {
             return;
           }
           if (const auto state = weak_state.lock()) {
             std::lock_guard lock(state->mutex);
+            if (state->generation != generation) {
+              return;
+            }
             state->connection = ConnectionState::Disconnected;
             state->system_id.reset();
             invalidate(state->snapshot);
@@ -450,10 +462,12 @@ class MavsdkVehicle::Impl {
         });
 
     bundle.armed_handle =
-        bundle.telemetry->subscribe_armed([weak_state](bool armed) {
+        bundle.telemetry->subscribe_armed(
+            [weak_state, generation](bool armed) {
           if (const auto state = weak_state.lock()) {
             std::lock_guard lock(state->mutex);
-            if (!state->active ||
+            if (state->generation != generation ||
+                !state->active ||
                 state->connection != ConnectionState::Connected) {
               return;
             }
@@ -464,10 +478,11 @@ class MavsdkVehicle::Impl {
         });
 
     bundle.flight_mode_handle = bundle.telemetry->subscribe_flight_mode(
-        [weak_state](mavsdk::Telemetry::FlightMode mode) {
+        [weak_state, generation](mavsdk::Telemetry::FlightMode mode) {
           if (const auto state = weak_state.lock()) {
             std::lock_guard lock(state->mutex);
-            if (!state->active ||
+            if (state->generation != generation ||
+                !state->active ||
                 state->connection != ConnectionState::Connected) {
               return;
             }
@@ -481,7 +496,7 @@ class MavsdkVehicle::Impl {
 
     bundle.battery_handle =
         bundle.telemetry->subscribe_battery(
-            [weak_state](mavsdk::Telemetry::Battery battery) {
+            [weak_state, generation](mavsdk::Telemetry::Battery battery) {
               if (const auto state = weak_state.lock()) {
                 std::lock_guard lock(state->mutex);
                 if (!state->active ||
