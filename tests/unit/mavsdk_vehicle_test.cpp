@@ -36,8 +36,8 @@ std::uint16_t crc_accumulate(std::uint8_t data, std::uint16_t crc) {
       (static_cast<std::uint16_t>(tmp) >> 4U));
 }
 
-std::array<std::uint8_t, 17>
-heartbeat_packet(std::uint8_t sequence, std::uint8_t autopilot) {
+std::array<std::uint8_t, 17> heartbeat_packet(std::uint8_t sequence,
+                                              std::uint8_t autopilot) {
   std::array<std::uint8_t, 17> packet{};
   packet[0] = kMavlinkV1Magic;
   packet[1] = kHeartbeatPayloadLength;
@@ -116,8 +116,7 @@ TEST(MavsdkVehicle, EmptyListenerIsDiscoveryTimeout) {
 }
 
 TEST(MavsdkVehicle, RejectsNonPx4AutopilotDiscovery) {
-  auto sender =
-      start_heartbeat_sender(49693, kArdupilotMega, 50ms, 400ms);
+  auto sender = start_heartbeat_sender(49693, kArdupilotMega, 50ms, 400ms);
   MavsdkVehicle vehicle;
 
   EXPECT_EQ(vehicle.connect("udpin://127.0.0.1:49693", 250ms),
