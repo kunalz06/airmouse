@@ -1,0 +1,62 @@
+Phase 3A MAVSDK build and test evidence
+==========================================
+
+Verification date: 2026-10-04
+Verified source commit: 6a4c1107af32db1298b9d4b3529825221020f3d6
+GitHub Actions workflow: build-test run #76
+Workflow run ID: 37195954497
+amd64 job ID: 111417777473
+Runner: Ubuntu 24.04, linux/amd64
+Final job result: PASS
+
+Pinned dependency
+-----------------
+MAVSDK release: v3.17.2
+Asset: libmavsdk-dev_3.17.2_ubuntu24.04_amd64.deb
+Expected SHA-256:
+9a8c0e960b6cda8f1b09d522a3fd7ea214808ebca922c7ad482d1194243f8cc5
+
+Fresh workflow output:
+- "/tmp/mavsdk.deb: OK"
+- "Setting up libmavsdk-dev (3.17.2)"
+- CMake configure/build completed successfully.
+
+Normal test suite
+-----------------
+Command path:
+./scripts/configure.sh && ./scripts/build.sh && ./scripts/test.sh
+
+Result:
+- 18/18 tests passed.
+- 0 tests failed.
+- CTest per-test deadline: 10 seconds.
+
+The passing tests include:
+- per-field telemetry freshness and stale/invalid handling;
+- disconnect invalidation and explicit reconnect behavior;
+- malformed transport versus bound-but-silent discovery timeout;
+- non-PX4 autopilot rejection;
+- delayed PX4 discovery within the deadline;
+- PX4 discovery after the deadline timing out;
+- cancellation of pending discovery;
+- repeated discovery-timeout endpoint release;
+- idempotent disconnect;
+- Phase 3A active-command rejection.
+
+Integration/static gates
+------------------------
+PASS: tests/integration/test_mavsdk_dependency.sh
+PASS: tests/integration/test_mavsdk_boundary.sh
+PASS: tests/integration/test_nidar_flight_cli.sh
+PASS: scripts/lint.sh
+
+clang-format reported no violations.
+clang-tidy completed with project warnings clean; warnings emitted from
+non-user/system code were suppressed by the configured analysis boundary.
+ShellCheck completed successfully for the Phase 3A scripts.
+
+Disk evidence
+-------------
+The amd64 clean-runner BuildKit report ended at 966.8 MB total.
+
+Final status: PASS

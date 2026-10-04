@@ -1,0 +1,56 @@
+Phase 3A sanitizer evidence
+============================
+
+Verification date: 2026-10-04
+Verified source commit: 6a4c1107af32db1298b9d4b3529825221020f3d6
+GitHub Actions workflow: build-test run #76
+Workflow run ID: 37195954497
+
+Instrumentation
+---------------
+CMake preset: sanitizers
+Compiler flags:
+-fsanitize=address,undefined -fno-omit-frame-pointer
+Linker flags:
+-fsanitize=address,undefined
+
+amd64 sanitizer suite
+---------------------
+Job ID: 111417777473
+Command path: ./scripts/sanitize.sh
+CTest per-test deadline: 15 seconds
+
+Result:
+- 18/18 tests passed.
+- 0 tests failed.
+- No ASan or UBSan diagnostic caused the job to fail.
+
+The synthetic non-PX4 fixture was deliberately made finite before adapter
+teardown. This keeps that test focused on PX4-only discovery filtering.
+Teardown while a real vehicle is actively publishing telemetry is exercised
+separately by the live sanitizer-instrumented SITL pass below.
+
+SITL-lane sanitizer suite
+-------------------------
+Job ID: 111417777606
+Command path: ./scripts/sanitize.sh
+Result: PASS before PX4/Gazebo integration.
+
+Live sanitizer-instrumented SITL
+--------------------------------
+Command path:
+NIDAR_CLIENT_BINARY=build/test/nidar-flight \
+  NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-vehicle.sh
+
+Result: PASS.
+
+The ASan/UBSan-instrumented NIDAR executable connected to a live PX4 v1.17
+X500 SITL instance, received fresh telemetry, and disconnected/cleaned up
+while PX4 was actively publishing.
+
+Scope note
+----------
+NIDAR code is sanitizer-instrumented. The upstream prebuilt MAVSDK v3.17.2
+library itself is not rebuilt with sanitizers in Phase 3A.
+
+Final status: PASS

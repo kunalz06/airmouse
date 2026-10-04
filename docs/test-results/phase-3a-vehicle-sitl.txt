@@ -1,0 +1,79 @@
+Phase 3A PX4 X500 vehicle telemetry SITL evidence
+================================================
+
+Verification date: 2026-10-04
+Verified source commit: 6a4c1107af32db1298b9d4b3529825221020f3d6
+GitHub Actions workflow: build-test run #76
+Workflow run ID: 37195954497
+SITL job ID: 111417777606
+Final job result: PASS
+
+Environment
+-----------
+PX4: v1.17.0
+Vehicle: Gazebo X500
+MAVSDK: v3.17.2
+NIDAR endpoint: udpin://127.0.0.1:14540
+Discovery deadline: 90 seconds
+Required telemetry maximum age: 2000 ms
+Initial telemetry wait: 15000 ms
+
+Preconditions and negative checks
+---------------------------------
+PASS: pinned dev image configure/build
+PASS: sanitizer unit suite
+PASS: pinned PX4/Gazebo image build
+PASS: Phase 2 passive smoke test
+PASS: Phase 2 bounded headless X500 test
+PASS: occupied UDP 14540 rejection
+PASS: launcher preserved its ownership/cleanup boundaries
+
+Normal NIDAR vehicle run
+------------------------
+Fresh client diagnostics:
+connection=connected
+component=companion-computer
+forwarding=off
+mavsdk_version=v3.17.2
+px4_system_id=1
+telemetry=ready
+armed_age_ms=0
+flight_mode_age_ms=0
+battery_age_ms=198
+battery_voltage_v=16.2
+
+Result:
+"Phase 3A vehicle SITL passed."
+
+Sanitizer-instrumented NIDAR vehicle run
+----------------------------------------
+Client binary: build/test/nidar-flight
+
+Fresh client diagnostics:
+connection=connected
+component=companion-computer
+forwarding=off
+mavsdk_version=v3.17.2
+px4_system_id=1
+telemetry=ready
+armed_age_ms=0
+flight_mode_age_ms=0
+battery_age_ms=198
+battery_voltage_v=16.2
+
+Result:
+"Phase 3A vehicle SITL passed."
+
+Safety boundary
+---------------
+The Phase 3A source-boundary gate passed in the same workflow. NIDAR does not
+instantiate MAVSDK Action, Offboard, Mission, MissionRaw, or Param command
+plugins in this phase. All command-shaped IVehicle entry points remain local
+RejectedByPhasePolicy results.
+
+Cleanup
+-------
+Both SITL runs completed their named-container cleanup checks successfully.
+The clean-runner SITL BuildKit report ended at 7.666 GB total.
+
+Final status: PASS
