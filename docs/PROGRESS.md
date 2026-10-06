@@ -1,6 +1,6 @@
 # Progress Ledger
 
-- Current phase: Phase 3A — Vehicle Telemetry (complete on verified implementation commit `6a4c1107af32db1298b9d4b3529825221020f3d6`).
+- Current phase: Phase 4A — ARM64 Production Runtime (planned / authorized; implementation not started). Phase 3A remains complete on verified implementation commit `6a4c1107af32db1298b9d4b3529825221020f3d6`.
 - Current task: Phase 4A ARM64 Production Runtime is planned and authorized through `docs/superpowers/plans/2026-10-06-phase-4a-arm64-runtime.md`. Codex should execute that plan next. Phase 3B active commands remain separately gated.
 - Completed task IDs: P0-01 host tooling; P0-02 project skeleton; P0-03 governance and agent routing; P0-04 disk controls; P0-05 configuration profiles; P0-06 architecture review; Phase 1 build/toolchain; Phase 2 PX4/Gazebo SITL; Phase 3A MAVSDK vehicle telemetry.
 - Test evidence: `docs/test-results/phase-0-*`; `docs/test-results/phase-1-*`; `docs/test-results/phase-2-*`; `docs/test-results/phase-3a-mavsdk-build.txt`; `docs/test-results/phase-3a-sanitizers.txt`; `docs/test-results/phase-3a-vehicle-sitl.txt`; `docs/test-results/phase-3a-independent-review.md`.
