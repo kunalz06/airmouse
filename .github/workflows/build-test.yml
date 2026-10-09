@@ -12,6 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: tests/integration/test_mavsdk_telemetry_patch.sh
+      - run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/integration/test_apt_closure.py -v
       - run: docker build --platform linux/amd64 -t nidar-dev -f docker/dev/Dockerfile .
       - run: ./scripts/configure.sh && ./scripts/build.sh && ./scripts/test.sh
       - run: tests/integration/test_mavsdk_dependency.sh
@@ -44,6 +45,15 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Capture unique CI build identity once
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$GITHUB_RUN_ID"
+          test -n "$GITHUB_RUN_ATTEMPT"
+          printf 'NIDAR_PR_HEAD_SHA=%s\n' '${{ github.event.pull_request.head.sha || github.sha }}' >> "$GITHUB_ENV"
+          printf 'NIDAR_BUILD_TIMESTAMP=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+      - name: Validate APT closure inventory parser
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/integration/test_apt_closure.py -v
       - name: Validate MAVSDK telemetry-only patch before ARM64 build
         run: tests/integration/test_mavsdk_telemetry_patch.sh
       - name: Register pinned ARM64 QEMU handler
@@ -64,12 +74,18 @@ jobs:
           tests/integration/test_runtime_arm64_artifact.sh nidar-runtime:phase-4a-ci
           tests/integration/test_runtime_arm64_execution.sh nidar-runtime:phase-4a-ci
           tests/integration/test_runtime_image_policy.sh nidar-runtime:phase-4a-ci
+      - name: Capture and verify ARM64 APT package closure
+        run: |
+          python3 scripts/verify-runtime-apt-closure.py \
+            --image-ref nidar-runtime:phase-4a-ci \
+            --output-dir build/release/phase-4a-apt-closure
       - name: Export OCI archive and record immutable manifest
         run: |
           scripts/build-runtime-arm64.sh --output build/release/nidar-runtime-arm64.oci.tar
           python3 scripts/record-runtime-manifest.py \
             --oci build/release/nidar-runtime-arm64.oci.tar \
             --image-ref nidar-runtime:phase-4a-ci \
+            --apt-summary build/release/phase-4a-apt-closure/summary.json \
             --output build/release/phase-4a-runtime-manifest.txt
           cat build/release/phase-4a-runtime-manifest.txt >> "$GITHUB_STEP_SUMMARY"
       - name: Check shell scripts and disk usage
@@ -87,5 +103,7 @@ jobs:
           path: |
             build/release/phase-4a-runtime-manifest.txt
             build/release/phase-4a-disk-report.txt
+            build/release/phase-4a-apt-closure/*.tsv
+            build/release/phase-4a-apt-closure/summary.json
           if-no-files-found: warn
           retention-days: 30

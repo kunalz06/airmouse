@@ -9,7 +9,7 @@ Update this file at the completion, blockage, or formal authorization of every p
 | Phase 2 — PX4 SITL / Gazebo | Complete | Phase 2 SITL, GUI/QGroundControl, image, and disk evidence | Preserve SITL regression gates. |
 | Phase 3A — Vehicle Telemetry | Complete | `6a4c1107`; GitHub Actions run #76; `docs/test-results/phase-3a-*` | Active commands remain disabled. |
 | Phase 3B — Active Vehicle Commands | Separate unmerged implementation / gated | `codex/phase-3b` worktree; nominal SITL recorded, fault matrix and safety review not complete | Do not merge/enable without independently approved flight safety gates. |
-| Phase 4A — ARM64 Production Runtime | In progress — candidate CI passed; safety/provenance corrections pending | `phase-4a-arm64-runtime`; GitHub Actions `37888297626`, `37888278631`; `docs/test-results/phase-4a-*` | Verify corrective commit in hosted amd64/SITL/ARM64 CI and obtain fresh independent review; resolve APT closure and build/run provenance before marking complete. |
+| Phase 4A — ARM64 Production Runtime | In progress — CI #91 green; APT/provenance verification and review pending | `phase-4a-arm64-runtime`; GitHub Actions `37888297626`, `37888278631`; `docs/test-results/phase-4a-*` | Verify corrective commit in hosted amd64/SITL/ARM64 CI and obtain fresh independent review; resolve APT closure and build/run provenance before marking complete. |
 | Phase 4B/C — Pi Runtime + X7+ Telemetry | Not started / gated | — | Requires Phase 4A completion; hardware telemetry-only with active commands locked. |
 | Phase 5 — Mission / Safety Core | Not started | — | Prerequisites and separate plan required. |
 | Phase 6 — Minimum Autonomous Mission | Not started | — | Complete Phase 5 gates first. |

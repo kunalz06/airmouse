@@ -27,3 +27,11 @@ The final-commit CI job creates its own immutable OCI manifest evidence as `phas
 - Close phase ledgers as **Complete** only after the above evidence is recorded. Until then the explicit status is **in progress / verification and review pending**.
 
 Phase 3B active vehicle commands remain separate and unmerged. No serial, Raspberry Pi, CUAV X7+, propulsion or flight hardware integration was performed.
+
+## Final Important finding corrections (awaiting new hosted CI and independent signoff)
+
+The remaining APT closure requirement is now addressed by an **observed, exact** package/version/architecture inventory for every Docker build stage, shipped in the verification records. The build does **not** promise immutable Ubuntu apt repositories; the independently pinned Ubuntu base plus package inventories and manifest SHA-256 evidence are intended for reviewer classification.
+
+CI now embeds both checked-out Git source/PR-head SHAs, an independent Git source timestamp, a single true UTC build timestamp, workflow, run ID and attempt. The same timestamp is reused between Docker `--load` and OCI export to avoid accidental image identity drift. New stage inventories and provenance must pass full, fresh hosted CI before reviewer reconsideration.
+
+Do not update this document to Complete or merge PR #2 without independent final-revision approval.

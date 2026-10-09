@@ -15,3 +15,9 @@ Run with a numeric non-root user and only the minimum required device access. Do
 Phase 4B verifies image transfer, architecture, startup, deterministic failure without PX4, service lifecycle and persistent logs **without the flight controller connected**. Phase 4C covers separately authorized read-only Raspberry Pi ↔ CUAV X7+ MAVLink/serial telemetry with propulsion rendered safe and failsafes independently checked.
 
 **Safety boundary:** This Phase 4A image contains no enabled arming, disarming, takeoff, land, Hold, Offboard, position, velocity, mission or parameter command plugins. These remain locally rejected by `RejectedByPhasePolicy`. Phase 3B is a separate unmerged and unapproved track.
+
+## APT evidence and CI identity required at release consumption
+
+The Phase 4A CI evidence artifact now also contains `phase-4a-apt-closure/{mavsdk-build,app-build,runtime}-packages.tsv` and `summary.json` with exact package names, versions, architecture and SHA-256 checksums. Validate the manifest's recorded checksums before any future release. This inventory is a record of packages actually resolved by APT, **not** a promise that the upstream repositories can reproduce the exact same packages later. Any release rebuilt from current apt indexes creates a new separately reviewed artifact.
+
+Verify the distinct GitHub PR head SHA and checked-out merge SHA, CI run ID/attempt, source-commit timestamp and wall-clock UTC build time along with the immutable OCI manifest digest. Continue to prohibit Pi deployment without a separately authorized digest-qualified artifact transport.

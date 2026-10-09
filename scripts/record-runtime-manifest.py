@@ -6,8 +6,10 @@ from the OCI index, verify the content-addressed blobs, and cross-check the
 locally loaded image. No registry upload or source modification is performed.
 """
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -32,6 +34,7 @@ def main() -> None:
     parser.add_argument("--oci", required=True, type=Path)
     parser.add_argument("--image-ref", required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--apt-summary", type=Path, required=True)
     args = parser.parse_args()
 
     lock = tomllib.loads(Path("config/versions.lock").read_text())
@@ -82,9 +85,73 @@ def main() -> None:
         raise ValueError("OCI config platform is not linux/arm64")
     if config["config"]["User"] != "65532:65532":
         raise ValueError("OCI runtime user is not the approved numeric non-root user")
+    source_timestamp = subprocess.check_output(
+        ["git", "show", "-s", "--format=%cI", "HEAD"], text=True
+    ).strip()
+    created = labels.get("org.opencontainers.image.created", "")
+    checked_at = datetime.now(timezone.utc)
+    try:
+        built_at = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        source_at = datetime.fromisoformat(source_timestamp.replace("Z", "+00:00"))
+    except (ValueError, TypeError) as error:
+        raise ValueError("invalid build/source timestamp") from error
+    if built_at.utcoffset() is None or built_at.utcoffset().total_seconds() != 0:
+        raise ValueError("build timestamp lacks UTC timezone")
+    if source_at.utcoffset() is None:
+        raise ValueError("Git source commit timestamp lacks timezone")
+    if built_at < source_at or built_at > checked_at:
+        raise ValueError("build wall-clock timestamp outside source-to-manifest window")
+    if (checked_at - built_at).total_seconds() > 4 * 3600:
+        raise ValueError("build wall-clock timestamp too old for fresh CI verification")
+    expected_created = os.environ.get("NIDAR_BUILD_TIMESTAMP", "")
+    if os.environ.get("GITHUB_RUN_ID") and not expected_created:
+        raise ValueError("CI build timestamp was not captured before building")
+    if expected_created and created != expected_created:
+        raise ValueError("build timestamp differs from CI captured timestamp")
+    run_id = os.environ.get("GITHUB_RUN_ID", "local")
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "0")
+    workflow = os.environ.get("GITHUB_WORKFLOW", "local")
+    ci_sha = os.environ.get("GITHUB_SHA", git_sha)
+    ci_head_sha = os.environ.get("NIDAR_PR_HEAD_SHA", git_sha)
+    ci_repository = os.environ.get("GITHUB_REPOSITORY", "local")
+    if len(ci_head_sha) != 40 or any(c not in "0123456789abcdef" for c in ci_head_sha):
+        raise ValueError("PR head identity is not an exact Git SHA")
+    if ci_sha != git_sha:
+        raise ValueError("checked-out Git SHA differs from recorded CI commit")
+    if run_id != "local" and (not run_id.isdecimal() or not run_attempt.isdecimal()
+                              or int(run_id) <= 0 or int(run_attempt) <= 0):
+        raise ValueError("CI run ID/attempt are invalid")
+    required.update({
+        "org.opencontainers.image.created": created,
+        "io.nidar.source.commit-timestamp": source_timestamp,
+        "io.nidar.ci.run-id": run_id,
+        "io.nidar.ci.run-attempt": run_attempt,
+        "io.nidar.ci.workflow": workflow,
+        "io.nidar.ci.sha": ci_sha,
+        "io.nidar.ci.head-sha": ci_head_sha,
+        "io.nidar.ci.repository": ci_repository,
+    })
     for name, value in required.items():
         if labels.get(name) != value or local_labels.get(name) != value:
             raise ValueError(f"provenance mismatch for {name}")
+    summary = json.loads(args.apt_summary.read_text())
+    if summary.get("schema") != "nidar-phase-4a-apt-closure-v1":
+        raise ValueError("unknown apt closure evidence schema")
+    stages = summary["stages"]
+    apt_records = []
+    if set(stages) != {"mavsdk-build", "app-build", "runtime"}:
+        raise ValueError("APT closure must cover all 3 Docker stages")
+    for stage in ("mavsdk-build", "app-build", "runtime"):
+        info = stages[stage]
+        fname = f"{stage}-packages.tsv"
+        data = (args.apt_summary.parent / fname).read_bytes()
+        if info["filename"] != fname or info["package_count"] != len(data.splitlines()):
+            raise ValueError(f"{stage}: invalid APT package count or filename")
+        digest = sha(data)
+        if info["sha256"] != digest:
+            raise ValueError(f"{stage}: APT evidence checksum mismatch")
+        apt_records.extend([f"apt_{stage}_package_count={info['package_count']}",
+                            f"apt_{stage}_sha256={digest}"])
     # Containerd-backed Docker image stores can report the manifest digest as
     # image Id; classic Docker stores can report the config digest.
     if docker["Id"] not in (manifest_digest, config_digest):
@@ -105,7 +172,16 @@ def main() -> None:
         f"mavsdk_source_commit={required['io.nidar.mavsdk.source-commit']}",
         f"runtime_base_index_digest={required['org.opencontainers.image.base.digest']}",
         f"application_version={labels.get('org.opencontainers.image.version')}",
-        f"build_timestamp={labels.get('org.opencontainers.image.created')}",
+        f"source_commit_timestamp={source_timestamp}",
+        f"build_timestamp={created}",
+        f"ci_run_id={run_id}",
+        f"ci_run_attempt={run_attempt}",
+        f"ci_workflow={workflow}",
+        f"ci_source_sha={ci_sha}",
+        f"ci_pr_head_sha={ci_head_sha}",
+        f"ci_repository={ci_repository}",
+        f"ci_run_url=https://github.com/{ci_repository}/actions/runs/{run_id}/attempts/{run_attempt}" if run_id != "local" else "ci_run_url=local",
+        *apt_records,
         "note=OCI image manifest digest is distinct from Docker image config digest",
         "",
     ])
