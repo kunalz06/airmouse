@@ -18,3 +18,7 @@ gated by Phase 4.
 
 See [the master plan](docs/MASTER_PLAN.md), [phase ledger](docs/TASKS.md), and
 [progress ledger](docs/PROGRESS.md).
+
+## Sensor-matched SITL (separate worktree)
+
+On `feature/sim-mtf01p-rplidar`, Gazebo models the intended MTF-01P optical flow and downward range, plus a **generic/provisional** Slamtec RPLIDAR 2D scan. See `docs/SENSOR_SIMULATION.md` for hardware fidelity limitations, launch steps, and safety gates. These files do not modify the Phase 4A ARM64 runtime.
