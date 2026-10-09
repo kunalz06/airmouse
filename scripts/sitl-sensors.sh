@@ -23,8 +23,8 @@ cleanup() {
     wait "${sim_pid}" >/dev/null 2>&1 || true
   fi
 }
-if [[ "${mode}" != "--smoke" && "${mode}" != "--run" ]]; then
-  echo "usage: $0 [--smoke|--run]" >&2
+if [[ "${mode}" != "--smoke" && "${mode}" != "--run" && "${mode}" != "--qualify" ]]; then
+  echo "usage: $0 [--smoke|--run|--qualify]" >&2
   exit 2
 fi
 docker image inspect "${image}" >/dev/null 2>&1 || {
@@ -128,6 +128,9 @@ if ! grep -q 'angle_min:' <<<"${lidar_sample}"; then
   exit 1
 fi
 echo "RPLIDAR Gazebo LaserScan publication received"
+if [[ "${mode}" == "--qualify" ]]; then
+  python3 "${project_root}/tests/sitl/qualify_sensor_data.py" --container "${container_name}"
+fi
 if grep -Eqi 'Error Code 14.*Unable to find uri|Error Code 14' "${log_file}"; then
   echo "Gazebo model URI resolution error" >&2
   exit 1

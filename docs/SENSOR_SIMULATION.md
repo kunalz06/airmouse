@@ -33,6 +33,21 @@ For interactive inspection, run `scripts/sitl-sensors.sh --run` in a terminal an
 
 **Important:** The generic `gz topic -e` client may not render PX4's custom `px4.msgs.OpticalFlow` protobuf despite the plugin publishing valid uORB. Verify flow using PX4's `px4-listener sensor_optical_flow`, not by treating the absence of `gz topic -e` text as missing flow. When the drone is stationary on the ground, `quality: 0` and zero flow can be expected; this smoke test does not prove high-quality optical flow during flight.
 
+## Passive stationary sensor qualification (implemented)
+
+Run the existing fixture without any motor/flight command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/sitl -p 'test_sensor_qualification.py' -v
+scripts/sitl-sensors.sh --qualify
+```
+
+The `--qualify` mode first runs the existing sensor smoke checks, then invokes `tests/sitl/qualify_sensor_data.py`. It verifies fresh PX4 optical-flow timestamps, finite two-axis flow, bounded integration time/quality (0–255), valid downward range with the configured 0.02–12 m envelope and downward mounting orientation, `SYS_HAS_GPS=0`, `SIM_GPS_USED=0`, `EKF2_GPS_CTRL=0`, and PX4 **Disarmed** before and after the check. No PX4 setpoint, arm or flight-mode command is sent.
+
+It then creates one **static** geometry target in the temporary Gazebo world using `simulation/scenarios/rplidar_front_target.sdf`: a 0.5 x 1.2 x 0.7 m box centered 2 m in front of the X500. The scanner sits 0.12 m forward of the quadcopter origin. The 720-ray 360° Gazebo scan must report the obstacle in the forward sector at approximately 1.63 m, have the correct scan frame and declared range bounds, and remain clear at the rear. The test exits nonzero on missing/invalid measurements and automatically stops its temporary Docker container.
+
+**Scope:** This proves a static geometry/telemetry data path, not actual Slamtec RPLIDAR driver compatibility, EKF2 fusion under motion, environmental resilience, optical-flow accuracy, or flight control authority. Stationary optical-flow quality can be zero and is intentionally not treated as a flight-quality pass. The RPLIDAR range, scan density and rate remain provisional until the specific Slamtec model is supplied.
+
 ## Next qualification gates
 
 Before using sensor fusion to authorize GPS-denied flight, test controlled simulated movement, estimator optical-flow and range-aid configuration, flow quality versus height/texture/light, sensor dropouts, stale timeouts, mounting axis signs, EKF2 local position and range innovations, and recovery behaviors. Every test must remain under simulation safety policy. Later verify the real MTF-01P `Mavlink_px4` serial configuration and the actual RPLIDAR driver through a propulsion-safe bench test. Nothing in this branch authorizes hardware connection or active flight.
