@@ -20,6 +20,7 @@ The final-commit CI job creates its own immutable OCI manifest evidence as `phas
 
 ## Mandatory remaining gates
 
+- GitHub Actions candidate runs `37888297626` and `37888278631` passed amd64, ASan/UBSan, X500 SITL and ARM64 runtime jobs for `ac0823c`; they are not evidence for a later corrective commit.
 - Verify all amd64, ASan/UBSan and X500 SITL jobs green on the exact final branch commit in GitHub Actions.
 - Verify the new ARM64 CI job green and retain its manifest, size and disk evidence.
 - Obtain an independent review with no unresolved Critical or Important findings; the author/assistant's own inspection is not an independent signoff.

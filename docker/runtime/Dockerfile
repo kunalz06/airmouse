@@ -3,6 +3,7 @@ ARG UBUNTU_24_04_IMAGE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d7
 FROM ${UBUNTU_24_04_IMAGE} AS mavsdk-build
 ARG MAVSDK_SOURCE_URL=https://github.com/mavlink/MAVSDK.git
 ARG MAVSDK_SOURCE_COMMIT=9e3ca17faa84aa868caea10a3bbdab7e53810ced
+COPY docker/runtime/mavsdk-telemetry-only.patch /tmp/mavsdk-telemetry-only.patch
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -13,13 +14,17 @@ RUN git clone --filter=blob:none "${MAVSDK_SOURCE_URL}" /opt/mavsdk-src \
  && cd /opt/mavsdk-src \
  && git checkout --detach "${MAVSDK_SOURCE_COMMIT}" \
  && test "$(git rev-parse HEAD)" = "${MAVSDK_SOURCE_COMMIT}" \
- && git submodule update --init --recursive
+ && git submodule update --init --recursive \
+ && git apply --check /tmp/mavsdk-telemetry-only.patch \
+ && git apply /tmp/mavsdk-telemetry-only.patch
 
 RUN cmake -S /opt/mavsdk-src -B /opt/mavsdk-build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=/opt/mavsdk-install \
+      -DBUILD_TESTING=OFF \
       -DBUILD_SHARED_LIBS=ON \
       -DBUILD_MAVSDK_SERVER=OFF \
+      -DENABLED_PLUGINS=telemetry \
  && cmake --build /opt/mavsdk-build --parallel \
  && cmake --install /opt/mavsdk-build
 
@@ -48,6 +53,7 @@ ARG RUNTIME_BASE_DIGEST=sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09
 
 LABEL org.opencontainers.image.title="nidar-runtime" \
       org.opencontainers.image.description="NIDAR telemetry-only ARM64 runtime" \
+      org.opencontainers.image.source="https://github.com/kunalz06/airmouse" \
       org.opencontainers.image.version="${NIDAR_VERSION}" \
       org.opencontainers.image.revision="${NIDAR_GIT_COMMIT}" \
       org.opencontainers.image.created="${NIDAR_BUILD_TIMESTAMP}" \

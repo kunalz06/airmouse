@@ -42,6 +42,15 @@ tar --list --verbose --file="${rootfs_tar}" | awk '
 '
 readelf --file-header "${binary}" | grep -Eq 'AArch64|aarch64'
 
+tar --extract --to-stdout --file="${rootfs_tar}" usr/local/lib/libmavsdk.so.3.17.2 |
+  strings >"${binary}.mavsdk-strings"
+trap 'docker rm -f "${container_id}" >/dev/null 2>&1 || true; rm -f "${rootfs_tar}" "${binary}" "${binary}.mavsdk-strings" "${listing}"' EXIT
+if grep -Eqi 'ActionImpl|OffboardImpl|MissionImpl|MissionRawImpl|ParamImpl|MavlinkPassthroughImpl' "${binary}.mavsdk-strings"; then
+  echo "active MAVSDK plugin symbols found in runtime library" >&2
+  exit 1
+fi
+grep -Eq 'TelemetryImpl' "${binary}.mavsdk-strings"
+
 for prohibited in \
   'usr/bin/gcc' 'usr/bin/g++' 'usr/bin/clang' 'usr/bin/cmake' 'usr/bin/ninja' \
   'usr/bin/git' 'usr/bin/gdb' 'usr/bin/gz' 'usr/bin/gazebo'; do

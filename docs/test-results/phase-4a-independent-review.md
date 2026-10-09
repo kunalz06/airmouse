@@ -1,26 +1,22 @@
-# Phase 4A review gate — pending independent approval
+# Phase 4A independent review — 2026-10-09
 
-**Status:** NOT independently approved. This document is a review queue, not a claim of completed independent safety review.
+**Reviewer:** separate read-only Codex review session, not the implementation author.
+**Reviewed range:** `797dab6..ac0823c`.
 
-Author-side checks performed:
+## Findings and resolutions
 
-- ARM64 image uses MAVSDK v3.17.2 source commit `9e3ca17faa84aa868caea10a3bbdab7e53810ced`.
-- New CI job retains existing amd64 and SITL job definitions, adds pinned QEMU registration and finite 110-minute job timeout.
-- Final runtime is non-root and excludes compilers, PX4/Gazebo trees and MAVSDK development headers.
-- Runtime CLI still exposes no active flight commands; the retained tests reject `RejectedByPhasePolicy` command paths.
-- OCI manifest and config blobs are SHA-256-checked, and published provenance is compared with the exact Git HEAD.
-- ARM64 image budget is enforced at 220,000,000 uncompressed bytes.
-- No destructive Docker garbage collection, Pi device access or active-command permissions were added.
+- **Important — command-capable MAVSDK plugins:** the candidate image linked Action, Mission, MissionRaw, Offboard, Param and raw MAVLink passthrough despite a telemetry-only CLI. **Corrected, pending fresh build/review:** the Docker build now uses `ENABLED_PLUGINS=telemetry`, applies the locked `mavsdk-telemetry-only.patch` to remove upstream's unconditional passthrough plugin, and artifact verification fails on command-plugin symbols. The candidate image failed this new test.
+- **Important — APT closure:** package inputs still float. An attempted Ubuntu snapshot lock did not resolve required ARM64 packages and was removed. **Open; blocks closeout** until a verified snapshot or exact package/version inventory/SBOM is implemented.
+- **Important — immutable distribution:** Phase 4A has no authority to publish a deployable image. **Resolved as a scope boundary:** CI evidence is not a deployment channel; `docs/DEPLOYMENT.md` requires a future authorized release to publish a digest-qualified OCI artifact plus checksum before Phase 4B consumption.
+- **Important — timestamp/run provenance:** the current OCI created label derives from commit time, not a verified wall-clock build time. **Open; blocks closeout** pending separate source timestamp, build timestamp and CI run identity.
+- **Important — candidate CI:** runs `37888297626` and `37888278631` passed amd64, SITL and arm64-runtime on `ac0823c`. **Fresh CI remains required** for the corrective commit.
+- **Minor — mutable actions:** checkout and upload-artifact are now SHA-pinned and recorded in `config/versions.lock` (pending fresh CI).
+- **Minor — upstream MAVSDK test build:** `BUILD_TESTING=OFF` is now locked for packaging (pending fresh build).
 
-**Reviewer must independently validate:**
+## Positive evidence
 
-1. ARM64 build and source reproducibility, including any risks from unpinned Ubuntu `apt` package versions.
-2. OCI manifest identity correctness across Docker/containerd image store variants.
-3. CI workflow permissions, artifact upload scope, job timeout and effects of QEMU installation.
-4. Shared library closure, OS image identity, non-root execution and development-tool exclusions.
-5. Phase 3A telemetry-only command boundary and negative tests.
-6. All fresh final-commit CI runs and disk evidence.
+Digest-pinned Ubuntu base, multi-stage packaging, numeric non-root user, bounded ARM64 execution, architecture/link checks, size policy, finite ARM64 CI timeout, minimal ARM64-job permissions, and OCI blob identity validation are sound. No Pi/serial/hardware work or active NIDAR command capability was added.
 
-Known release-hardening follow-ups inherited from earlier phases: immutable GitHub Actions action-SHA pinning and stronger apt dependency pinning. Independent reviewer must classify severity before closeout.
+## Verdict
 
-**Signoff:** Pending. No independent reviewer identity or decision is fabricated.
+**Not approved for Phase 4A closeout.** No Critical finding was reported, but the unresolved APT closure and build/run provenance requirements are Important. The telemetry-library correction requires fresh independent review and exact-commit hosted CI.

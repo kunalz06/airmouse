@@ -28,7 +28,11 @@ done
 git_commit=$(git rev-parse HEAD)
 build_timestamp=$(git show -s --format=%cI HEAD)
 runtime_base_digest=$(awk -F '"' '/^ubuntu_24_04_image_index =/ { print $2 }' config/versions.lock)
+mavsdk_source_url=$(awk -F '"' '/^mavsdk_arm64_source_url =/ { print $2 }' config/versions.lock)
+mavsdk_source_commit=$(awk -F '"' '/^mavsdk_arm64_source_commit =/ { print $2 }' config/versions.lock)
 test -n "${runtime_base_digest}"
+test -n "${mavsdk_source_url}"
+test -n "${mavsdk_source_commit}"
 
 if ! docker buildx inspect nidar-builder >/dev/null 2>&1; then
   echo "required buildx builder 'nidar-builder' is unavailable" >&2
@@ -43,6 +47,8 @@ build_args=(
   --build-arg "NIDAR_GIT_COMMIT=${git_commit}"
   --build-arg "NIDAR_BUILD_TIMESTAMP=${build_timestamp}"
   --build-arg "RUNTIME_BASE_DIGEST=${runtime_base_digest}"
+  --build-arg "MAVSDK_SOURCE_URL=${mavsdk_source_url}"
+  --build-arg "MAVSDK_SOURCE_COMMIT=${mavsdk_source_commit}"
 )
 
 if [[ "${load_image}" == true ]]; then
