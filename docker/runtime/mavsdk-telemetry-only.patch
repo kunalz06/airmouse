@@ -1,10 +1,10 @@
-diff --git a/src/mavsdk/plugins/CMakeLists.txt b/src/mavsdk/plugins/CMakeLists.txt
-index 10dd236f..f6b371fb 100644
 --- a/src/mavsdk/plugins/CMakeLists.txt
 +++ b/src/mavsdk/plugins/CMakeLists.txt
-@@ -2,6 +2,3 @@ foreach(plugin ${ENABLED_PLUGINS})
-     add_subdirectory(${plugin})
+@@ -3,6 +3,3 @@
  endforeach()
 -
 -# Don't forget about mavlink_passthrough which is not auto-generated.
 -add_subdirectory(mavlink_passthrough)
+-
++
+ set(UNIT_TEST_SOURCES ${UNIT_TEST_SOURCES} PARENT_SCOPE)

@@ -20,3 +20,12 @@ Digest-pinned Ubuntu base, multi-stage packaging, numeric non-root user, bounded
 ## Verdict
 
 **Not approved for Phase 4A closeout.** No Critical finding was reported, but the unresolved APT closure and build/run provenance requirements are Important. The telemetry-library correction requires fresh independent review and exact-commit hosted CI.
+
+
+## CI run #89 corrective follow-up — 2026-10-09
+
+GitHub Actions run [#89](https://github.com/kunalz06/airmouse/actions/runs/37902390720) passed AMD64 and SITL, but ARM64 failed before compilation. The pin-verified MAVSDK source checkout succeeded; `git apply --check` rejected `docker/runtime/mavsdk-telemetry-only.patch` with **`error: corrupt patch at line 11`**. The earlier patch hunk's line counts did not match the actual upstream file. This is a patch-format error, not a demonstrated MAVSDK ARM64 compile/link failure.
+
+The patch has been regenerated from the exact v3.17.2 upstream `src/mavsdk/plugins/CMakeLists.txt` (Git blob `5493e6038ad2ca2d87a2c842e423ce8115632595`). A new bounded fixture-based `git apply --check` regression test runs at the start of AMD64 and ARM64 CI, before costly toolchain/image work. It also verifies that the tested result excludes unconditional passthrough and retains the telemetry plugin loop. The **final linked binary's command capability and fresh ARM64 CI remain unverified** until the next hosted run.
+
+**Other Important blockers unchanged:** independently verified APT closure and correct, distinct build wall-clock timestamp/CI run provenance. Do not mark Phase 4A complete based only on the patch validation.
