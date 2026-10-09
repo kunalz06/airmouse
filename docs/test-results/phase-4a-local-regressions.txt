@@ -1,0 +1,22 @@
+Phase 4A local regression summary — captured 2026-10-09
+
+AMD64:
+  ./scripts/configure.sh; ./scripts/build.sh; ./scripts/test.sh
+  tests/integration/test_mavsdk_dependency.sh
+  tests/integration/test_mavsdk_boundary.sh
+  tests/integration/test_nidar_flight_cli.sh
+  ./scripts/lint.sh; ./scripts/sanitize.sh
+  Result: ALL AMD64 LOCAL GATES PASSED; 18/18 CTest cases passed in sanitizer run.
+  Full terminal log (ignored working artifact): build/release/phase-4a-amd64-tests.log
+
+SITL:
+  tests/sitl/test_sitl_smoke.sh
+  NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-headless.sh
+  tests/sitl/test_vehicle_sitl.sh --occupied-port
+  NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-vehicle.sh
+  NIDAR_CLIENT_BINARY=build/test/nidar-flight NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-vehicle.sh
+  Result: ALL LOCAL SITL GATES PASSED. PX4 system ID 1 discovered, CompanionComputer identity,
+  forwarding off, armed/mode/battery telemetry ready. No active commands.
+  Full terminal log (ignored working artifact): build/release/phase-4a-sitl-tests.log
+
+Not a substitute for final-commit hosted GitHub Actions verification.

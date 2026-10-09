@@ -36,6 +36,53 @@ jobs:
       - run: NIDAR_CLIENT_BINARY=build/test/nidar-flight NIDAR_SITL_TIMEOUT_SECONDS=90 scripts/sitl-vehicle.sh
       - run: ./scripts/docker-disk-report.sh
 
-# linux/arm64 runtime packaging is intentionally deferred to Phase 4.
-# MAVSDK v3.17.2 publishes no Ubuntu 24.04 arm64 development package, so
-# Phase 3A does not substitute an unverified Debian artifact or source build.
+  arm64-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Register pinned ARM64 QEMU handler
+        run: |
+          docker run --rm --privileged \
+            tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 \
+            --install arm64
+          test -r /proc/sys/fs/binfmt_misc/qemu-aarch64
+      - name: Start isolated Buildx builder
+        run: |
+          docker buildx create --name nidar-builder --driver docker-container --use
+          docker buildx inspect nidar-builder --bootstrap
+          docker buildx inspect nidar-builder | grep -q linux/arm64
+      - name: Build and load linux/arm64 runtime
+        run: scripts/build-runtime-arm64.sh --load --image-ref nidar-runtime:phase-4a-ci
+      - name: Verify architecture, libraries, content and execution
+        run: |
+          tests/integration/test_runtime_arm64_artifact.sh nidar-runtime:phase-4a-ci
+          tests/integration/test_runtime_arm64_execution.sh nidar-runtime:phase-4a-ci
+          tests/integration/test_runtime_image_policy.sh nidar-runtime:phase-4a-ci
+      - name: Export OCI archive and record immutable manifest
+        run: |
+          scripts/build-runtime-arm64.sh --output build/release/nidar-runtime-arm64.oci.tar
+          python3 scripts/record-runtime-manifest.py \
+            --oci build/release/nidar-runtime-arm64.oci.tar \
+            --image-ref nidar-runtime:phase-4a-ci \
+            --output build/release/phase-4a-runtime-manifest.txt
+          cat build/release/phase-4a-runtime-manifest.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Check shell scripts and disk usage
+        run: |
+          bash -n scripts/build-runtime-arm64.sh tests/integration/test_runtime_arm64_artifact.sh \
+            tests/integration/test_runtime_arm64_execution.sh \
+            tests/integration/test_runtime_image_policy.sh
+          scripts/docker-disk-report.sh | tee build/release/phase-4a-disk-report.txt
+          git diff --check
+      - name: Publish small verification records (not runtime image)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-4a-arm64-evidence
+          path: |
+            build/release/phase-4a-runtime-manifest.txt
+            build/release/phase-4a-disk-report.txt
+          if-no-files-found: warn
+          retention-days: 30

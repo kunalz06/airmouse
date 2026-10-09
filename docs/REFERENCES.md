@@ -12,3 +12,5 @@
 - [MAVSDK C++ Mavsdk API](https://mavsdk.mavlink.io/main/en/cpp/api_reference/classmavsdk_1_1_mavsdk.html)
 - [MAVSDK C++ System API](https://mavsdk.mavlink.io/main/en/cpp/api_reference/classmavsdk_1_1_system.html)
 - [MAVSDK C++ Telemetry API](https://mavsdk.mavlink.io/main/en/cpp/api_reference/classmavsdk_1_1_telemetry.html)
+
+- [Phase 4A ARM64 implementation/status](PHASE_4A_UPDATE.md); [Phase 4A source-selection evidence](test-results/phase-4a-mavsdk-arm64-selection.md); [local OCI manifest snapshot](test-results/phase-4a-runtime-manifest.txt).

@@ -13,8 +13,9 @@ Active flight commands remain prohibited by Phase 3A policy and are not sent
 to PX4.
 
 GitHub is the source of truth. Development, tests, and SITL run on the Ubuntu
-laptop; linux/arm64 Raspberry Pi packaging and real X7+ bench integration are
-gated by Phase 4.
+laptop. Phase 4A ARM64 packaging is implemented on a separate branch, with local
+tests passing; final hosted CI and independent review remain mandatory before
+Phase 4B Raspberry Pi deployment or Phase 4C real X7+ bench integration.
 
 See [the master plan](docs/MASTER_PLAN.md), [phase ledger](docs/TASKS.md), and
 [progress ledger](docs/PROGRESS.md).
