@@ -60,3 +60,13 @@ in this APT snapshot scope; development and simulation Dockerfiles remain
 unchanged. The final hosted CI run and a fresh independent review are still
 pending. This addendum records implementation status only and does not amend
 the review verdict or mark Phase 4A approved or complete.
+
+## Independent follow-up review — 2026-10-11 (PR #2 corrective tree)
+
+**Reviewer:** separate read-only Codex session; no files modified during review.
+**Reviewed tree:** `dd9388e4fb9fb90370608f2c911c1bed2af6dcd1` (local commit `c10c183`, subsequently published through GitHub with the same tree as `7a4731d`).
+**Verdict:** **APPROVE PENDING EXACT-COMMIT HOSTED CI**. No Critical or Important findings remain in the reviewed patch.
+
+The reviewer verified that normal image builds reject APT bootstrap mode; snapshot and trust policy derives from `config/versions.lock`; all three package inventories are locked and independently replayed; and one Buildx invocation yields the loaded image and OCI archive while provenance validates real creation timestamps. Telemetry-only MAVSDK restrictions are retained. The only reported Minor issue was stale documentation describing the completed locked replay as still in progress; this was corrected after review in `docker/apt/README.md` and `docs/DEPLOYMENT.md`.
+
+The authorized laptop ran 22/22 unit tests, the pinned MAVSDK patch check, shell syntax, ShellCheck, Dockerfile validation, and repository and locked replay package checks. The reviewer independently inspected the code and hashes but could not run temporary-directory unit tests inside its read-only sandbox. **Final exact-commit AMD64, SITL and ARM64 hosted CI, full-image execution, runtime size/policy, and OCI manifest provenance remain mandatory.** No merge, release, Raspberry Pi/CUAV integration, motor control or flight authorization is implied by this conditional review.

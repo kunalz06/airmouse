@@ -36,5 +36,5 @@ installer whose hardcoded bootstrap checksum differs from the lock.
 This applies only to `docker/runtime/Dockerfile`; development and simulation
 Dockerfiles are unchanged. The first generated ARM64 closure contains 197
 MAVSDK-build, 170 application-build, and 94 runtime packages. Its authorized
-host bootstrap succeeded and a locked replay is running. It is not a completed
-hosted-CI or independent-review gate.
+host bootstrap and separate locked ARM64 APT-only replay both succeeded; all
+three inventories matched byte-for-byte. Full-image hosted CI is still pending.

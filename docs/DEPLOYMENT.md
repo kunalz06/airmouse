@@ -38,7 +38,7 @@ bootstrap regeneration path as a routine build mode.
 Verify the distinct GitHub PR head SHA and checked-out merge SHA, CI run ID/attempt, source-commit timestamp and wall-clock UTC build time along with the immutable OCI manifest digest. Continue to prohibit Pi deployment without a separately authorized digest-qualified artifact transport.
 
 The first generated closure contains 197 MAVSDK-build, 170 application-build,
-and 94 runtime packages. Its authorized-host bootstrap succeeded; the locked
-replay is still running. This is not hosted-CI evidence and does not authorize
-hardware deployment, publication, or Phase 4A completion. Final hosted CI and
-an independent review remain required.
+and 94 runtime packages. Its authorized-host bootstrap and independent locked
+APT-only replay succeeded with identical inventory hashes. This does not
+replace full-image hosted CI evidence or authorize hardware deployment,
+publication, or Phase 4A completion. Final hosted CI remains required.
