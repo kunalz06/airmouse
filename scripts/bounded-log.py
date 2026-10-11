@@ -101,18 +101,7 @@ def main() -> int:
     tail_size = 0
     truncated = False
 
-    child = subprocess.Popen(
-        arguments.command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
-    assert child.stdout is not None
-    stream = child.stdout
-    os.set_blocking(stream.fileno(), False)
-    selector = selectors.DefaultSelector()
-    selector.register(stream, selectors.EVENT_READ)
-
+    child: subprocess.Popen[bytes] | None = None
     externally_signalled: int | None = None
     termination_started_at: float | None = None
     kill_sent = False
@@ -127,6 +116,8 @@ def main() -> int:
     prior_handlers: dict[int, signal.Handlers] = {}
 
     def send_group_signal(signum: int) -> None:
+        if child is None:
+            return
         try:
             os.killpg(child.pid, signum)
         except ProcessLookupError:
@@ -153,6 +144,21 @@ def main() -> int:
 
     for signum in (signal.SIGTERM, signal.SIGINT):
         prior_handlers[signum] = signal.signal(signum, forward_signal)
+
+    # Install forwarding before starting the detached child session. A signal
+    # received during Popen otherwise kills this collector before it can stop
+    # a Docker CLI that is still creating its container.
+    child = subprocess.Popen(
+        arguments.command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    assert child.stdout is not None
+    stream = child.stdout
+    os.set_blocking(stream.fileno(), False)
+    selector = selectors.DefaultSelector()
+    selector.register(stream, selectors.EVENT_READ)
 
     try:
         while True:

@@ -193,6 +193,33 @@ class BoundedLogTest(unittest.TestCase):
             self.assertEqual(collector.wait(timeout=5), 143)
             self.assertEqual(output.read_bytes(), b"before external term\n")
 
+    def test_signal_during_child_spawn_is_forwarded_after_handler_install(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "output.log"
+            runner = (
+                "import importlib.util, os, signal, sys\n"
+                "source, output = sys.argv[1:]\n"
+                "spec = importlib.util.spec_from_file_location('bounded_log', source)\n"
+                "module = importlib.util.module_from_spec(spec)\n"
+                "spec.loader.exec_module(module)\n"
+                "original = module.subprocess.Popen\n"
+                "def spawn_then_signal(*args, **kwargs):\n"
+                "    child = original(*args, **kwargs)\n"
+                "    os.kill(os.getpid(), signal.SIGTERM)\n"
+                "    return child\n"
+                "module.subprocess.Popen = spawn_then_signal\n"
+                "sys.argv = [source, '--output', output, '--max-bytes', '128', "
+                "'--', sys.executable, '-c', \"import time; time.sleep(60)\"]\n"
+                "raise SystemExit(module.main())\n"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", runner, str(HELPER), str(output)],
+                check=False,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 143)
+            self.assertTrue(output.exists())
+
     def test_signal_during_atomic_log_write_preserves_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory) / "output.log"

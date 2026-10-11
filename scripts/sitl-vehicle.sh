@@ -14,8 +14,15 @@ client_binary="${NIDAR_CLIENT_BINARY:-build/dev/nidar-flight}"
 timeout_seconds="${NIDAR_SITL_TIMEOUT_SECONDS:-90}"
 client_timeout_seconds="${NIDAR_SITL_CLIENT_TIMEOUT_SECONDS:-120}"
 cleanup_timeout_seconds="${NIDAR_SITL_CLEANUP_TIMEOUT_SECONDS:-30}"
-sim_name="nidar-sitl-vehicle-px4"
-client_name="nidar-sitl-vehicle-client"
+docker_timeout_seconds="${NIDAR_SITL_DOCKER_TIMEOUT_SECONDS:-10}"
+sim_name=""
+client_name=""
+run_dir=""
+run_token=""
+sim_cidfile=""
+client_cidfile=""
+owned_container_id=""
+sitl_lock_file="/tmp/nidar-sitl-vehicle.lock"
 listen_port=14540
 output_dir="${project_root}/simulation/output/phase-3a"
 sim_log="${output_dir}/px4-sitl.log"
@@ -31,21 +38,6 @@ sim_started=false
 client_started=false
 pending_signal_status=0
 
-is_confirmed_absent_container_error() {
-  local name="$1"
-  local error="$2"
-
-  case "${error}" in
-    "Error: No such object: ${name}" | \
-    "Error: No such container: ${name}" | \
-    "Error response from daemon: No such object: ${name}" | \
-    "Error response from daemon: No such container: ${name}")
-      return 0
-      ;;
-  esac
-  return 1
-}
-
 cleanup_remaining_seconds() {
   local remaining=$((cleanup_deadline - SECONDS))
   if ((remaining <= 0)); then
@@ -59,101 +51,114 @@ record_cleanup_failure() {
   cleanup_result=1
 }
 
-inspect_cleanup_container() {
-  local name="$1"
+read_container_id() {
+  local cidfile="$1"
+  local container_id
+
+  [[ -r "${cidfile}" ]] || return 1
+  container_id="$(<"${cidfile}")"
+  [[ "${container_id}" =~ ^[a-f0-9]{64}$ ]] || return 1
+  printf '%s\n' "${container_id}"
+}
+
+is_confirmed_absent_container_error() {
+  local reference="$1"
+  local error="$2"
+  case "${error}" in
+    "Error: No such object: ${reference}" | \
+    "Error: No such container: ${reference}" | \
+    "Error response from daemon: No such object: ${reference}" | \
+    "Error response from daemon: No such container: ${reference}") return 0 ;;
+  esac
+  return 1
+}
+
+inspect_owned_container() {
+  local reference="$1"
+  local role="$2"
+  owned_container_id=""
   local remaining
   if ! remaining="$(cleanup_remaining_seconds)"; then
-    record_cleanup_failure "cleanup deadline expired before inspecting ${name}"
-    return 2
+    record_cleanup_failure "cleanup deadline expired before verifying ${role} container"
+    return 1
   fi
 
-  local status
-  local inspect_error
-  local inspect_error_file
-  if ! inspect_error_file="$(mktemp "${TMPDIR:-/tmp}/nidar-sitl-inspect.XXXXXX")"; then
-    record_cleanup_failure "failed to create bounded inspect error file for ${name}"
+  local inspect_output inspect_error inspect_error_file status
+  if ! inspect_error_file="$(mktemp "${run_dir}/inspect.XXXXXX")"; then
+    record_cleanup_failure "failed to allocate ownership verification state"
     return 2
   fi
-
-  # Docker inspect normally emits only one diagnostic line. Limit a faulty
-  # client/daemon to 4 KiB so cleanup cannot accumulate unbounded stderr.
-  if timeout --foreground --signal=TERM --kill-after=1s "${remaining}s" \
-    bash -c 'ulimit -f 8; exec "$@"' _ \
-      docker container inspect "${name}" >/dev/null 2>"${inspect_error_file}"; then
+  if inspect_output="$(timeout --foreground --signal=TERM --kill-after=1s "${remaining}s" \
+    docker container inspect --format '{{.Id}}\t{{index .Config.Labels "io.nidar.sitl.token"}}' \
+      "${reference}" 2>"${inspect_error_file}")"; then
+    :
+  else
+    status=$?
+    inspect_error="$(<"${inspect_error_file}")"
     rm -f "${inspect_error_file}"
-    return 0
-  else
-    status=$?
-  fi
-  inspect_error="$(<"${inspect_error_file}")"
-  rm -f "${inspect_error_file}"
-  if ((status == 1)) && is_confirmed_absent_container_error "${name}" "${inspect_error}"; then
-    return 1
-  fi
-  if ((status == 1)); then
-    record_cleanup_failure "could not confirm ${name} is absent during cleanup"
+    if ((status == 1)) && is_confirmed_absent_container_error "${reference}" "${inspect_error}"; then
+      return 1
+    fi
+    record_cleanup_failure "could not verify ownership of ${role} container"
     return 2
   fi
-  record_cleanup_failure "failed to inspect ${name} during cleanup (status ${status})"
-  return 2
+  rm -f "${inspect_error_file}"
+  if [[ ! "${inspect_output}" =~ ^([a-f0-9]{64})\\t${run_token}$ ]]; then
+    record_cleanup_failure "could not verify ownership of ${role} container"
+    return 2
+  fi
+  owned_container_id="${BASH_REMATCH[1]}"
 }
 
-check_preflight_container() {
-  local name="$1"
-  local status
-  local inspect_error
-
-  if inspect_error="$(docker container inspect "${name}" 2>&1 >/dev/null)"; then
-    return 0
+remove_owned_container() {
+  local cidfile="$1"
+  local name="$2"
+  local role="$3"
+  local container_id inspect_status
+  if container_id="$(read_container_id "${cidfile}")"; then
+    if inspect_owned_container "${container_id}" "${role}"; then
+      container_id="${owned_container_id}"
+    else
+      inspect_status=$?
+      ((inspect_status == 1)) && return 0
+      return 1
+    fi
+  elif inspect_owned_container "${name}" "${role}"; then
+    container_id="${owned_container_id}"
   else
-    status=$?
-  fi
-  if ((status == 1)) && is_confirmed_absent_container_error "${name}" "${inspect_error}"; then
-    return 1
-  fi
-  echo "failed to inspect existing container ${name}; refusing to continue" >&2
-  return 2
-}
-
-remove_cleanup_container() {
-  local name="$1"
-  local inspected
-  if inspect_cleanup_container "${name}"; then
-    inspected=0
-  else
-    inspected=$?
-  fi
-  if ((inspected == 1)); then
-    return 0
-  fi
-  if ((inspected != 0)); then
+    inspect_status=$?
+    ((inspect_status == 1)) && return 0
     return 1
   fi
 
   local remaining
   if ! remaining="$(cleanup_remaining_seconds)"; then
-    record_cleanup_failure "cleanup deadline expired before removing ${name}"
+    record_cleanup_failure "cleanup deadline expired before removing ${role} container"
     return 1
   fi
-  local status
   if timeout --foreground --signal=TERM --kill-after=1s "${remaining}s" \
-    docker rm -f "${name}" >/dev/null 2>&1; then
-    status=0
-  else
-    status=$?
-    record_cleanup_failure "failed to remove ${name} during cleanup (status ${status})"
+    docker rm -f "${container_id}" >/dev/null 2>&1; then
+    if inspect_owned_container "${container_id}" "${role}"; then
+      record_cleanup_failure "${role} container remained after cleanup"
+      return 1
+    else
+      inspect_status=$?
+      ((inspect_status == 1)) && return 0
+      return 1
+    fi
   fi
+  record_cleanup_failure "failed to remove ${role} container during cleanup"
+  return 1
+}
 
-  if inspect_cleanup_container "${name}"; then
-    record_cleanup_failure "container remained after cleanup: ${name}"
+check_required_image() {
+  local image="$1"
+  local description="$2"
+  if ! timeout --foreground --signal=TERM --kill-after=1s "${docker_timeout_seconds}s" \
+    docker image inspect "${image}" >/dev/null 2>&1; then
+    echo "required ${description} is unavailable: ${image}" >&2
     return 1
-  else
-    inspected=$?
   fi
-  if ((inspected != 1)); then
-    return 1
-  fi
-  return "${status}"
 }
 
 terminate_logger() {
@@ -194,17 +199,21 @@ cleanup() {
 
   terminate_logger
   if [[ "${client_started}" == true ]]; then
-    if ! remove_cleanup_container "${client_name}"; then
-      : # The helper already recorded the bounded cleanup failure.
-    fi
-  fi
-  if [[ "${sim_started}" == true ]]; then
-    if ! remove_cleanup_container "${sim_name}"; then
+    if ! remove_owned_container "${client_cidfile}" "${client_name}" client; then
       : # The helper already recorded the bounded cleanup failure.
     fi
   fi
   if ! reap_logger; then
     : # The helper already recorded the bounded cleanup failure.
+  fi
+  if [[ "${sim_started}" == true ]]; then
+    if ! remove_owned_container "${sim_cidfile}" "${sim_name}" simulator; then
+      : # The helper already recorded the bounded cleanup failure.
+    fi
+  fi
+  if [[ -n "${run_dir}" ]]; then
+    rm -rf "${run_dir}"
+    run_dir=""
   fi
 
   if ((cleanup_result != 0)); then
@@ -242,6 +251,19 @@ if ! [[ "${cleanup_timeout_seconds}" =~ ^[1-9][0-9]*$ ]]; then
   echo "NIDAR_SITL_CLEANUP_TIMEOUT_SECONDS must be a positive integer" >&2
   exit 2
 fi
+if ! [[ "${docker_timeout_seconds}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "NIDAR_SITL_DOCKER_TIMEOUT_SECONDS must be a positive integer" >&2
+  exit 2
+fi
+if ! command -v flock >/dev/null 2>&1; then
+  echo "flock is required to serialize fixed-port SITL runs" >&2
+  exit 2
+fi
+exec {sitl_lock_fd}>"${sitl_lock_file}"
+if ! flock -n "${sitl_lock_fd}"; then
+  echo "another Phase 3A vehicle SITL run owns UDP ${listen_port}" >&2
+  exit 2
+fi
 
 python3 - "${listen_port}" <<'PY'
 import socket
@@ -258,24 +280,10 @@ finally:
     sock.close()
 PY
 
-for name in "${sim_name}" "${client_name}"; do
-  if check_preflight_container "${name}"; then
-    echo "refusing to replace existing container: ${name}" >&2
-    exit 2
-  else
-    inspect_status=$?
-  fi
-  if ((inspect_status != 1)); then
-    exit 2
-  fi
-done
-
-if ! docker image inspect "${sim_image}" >/dev/null 2>&1; then
-  echo "required simulation image is unavailable: ${sim_image}" >&2
+if ! check_required_image "${sim_image}" simulation image; then
   exit 2
 fi
-if ! docker image inspect "${dev_image}" >/dev/null 2>&1; then
-  echo "required development image is unavailable: ${dev_image}" >&2
+if ! check_required_image "${dev_image}" development image; then
   exit 2
 fi
 if [[ ! -x "${project_root}/${client_binary}" ]]; then
@@ -290,12 +298,26 @@ fi
 mkdir -p "${output_dir}"
 : >"${sim_log}"
 : >"${client_log}"
+if ! run_dir="$(mktemp -d "${TMPDIR:-/tmp}/nidar-sitl-vehicle.XXXXXXXX")"; then
+  echo "failed to create private SITL container state directory" >&2
+  exit 2
+fi
+if ! run_token="$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]')" ||
+   ! [[ "${run_token}" =~ ^[a-f0-9]{32}$ ]]; then
+  echo "failed to create unique SITL container ownership token" >&2
+  exit 2
+fi
+sim_name="nidar-sitl-vehicle-px4-${run_token}"
+client_name="nidar-sitl-vehicle-client-${run_token}"
+sim_cidfile="${run_dir}/sim.cid"
+client_cidfile="${run_dir}/client.cid"
 
 trap 'defer_signal 130' INT
 trap 'defer_signal 143' TERM
 python3 "${project_root}/scripts/bounded-log.py" \
   --output "${sim_log}" --max-bytes "${log_max_bytes}" -- \
-  docker run --name "${sim_name}" --network host --init \
+  docker run --name "${sim_name}" --cidfile "${sim_cidfile}" \
+    --label "io.nidar.sitl.token=${run_token}" --network host --init \
     -v "${overlay}:${px4_root}/etc/init.d-posix/px4-rc.mavlink:ro" \
     -e HEADLESS=1 "${sim_image}" \
     bash -lc 'cd /opt/PX4-Autopilot && make px4_sitl gz_x500' &
@@ -314,7 +336,8 @@ client_started=true
 python3 "${project_root}/scripts/bounded-log.py" \
   --output "${client_log}" --max-bytes "${log_max_bytes}" \
   --timeout-seconds "${client_timeout_seconds}" --kill-after-seconds 10 -- \
-  docker run --rm --name "${client_name}" --network host --init \
+  docker run --rm --name "${client_name}" --cidfile "${client_cidfile}" \
+    --label "io.nidar.sitl.token=${run_token}" --network host --init \
     -v "${project_root}:/workspace:ro" -w /workspace \
     "${dev_image}" "${client_binary}" \
       --sim \
