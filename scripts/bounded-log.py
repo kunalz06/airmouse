@@ -191,7 +191,16 @@ def main() -> int:
                 reap_deadline = now + REAP_GRACE_SECONDS
 
             if status is not None and not stream_open:
-                break
+                # EOF does not prove that same-process-group descendants have
+                # stopped: they may close stdout and ignore SIGTERM. Keep the
+                # TERM/KILL deadline active until the group exits or the
+                # bounded post-SIGKILL reap grace expires.
+                try:
+                    os.killpg(child.pid, 0)
+                except ProcessLookupError:
+                    break
+                if termination_started_at is None:
+                    begin_termination(now)
             if reap_deadline is not None and now >= reap_deadline:
                 # SIGKILL should make this path unreachable, but do not let an
                 # uninterruptible child or inherited descriptor block log flushing.

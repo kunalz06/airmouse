@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import pathlib
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -147,6 +148,7 @@ class BoundedLogTest(unittest.TestCase):
     def test_external_term_returns_signal_status_after_flushing_log(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory) / "output.log"
+            child_ready = pathlib.Path(directory) / "child-ready"
             collector = subprocess.Popen(
                 [
                     sys.executable,
@@ -158,10 +160,35 @@ class BoundedLogTest(unittest.TestCase):
                     "--",
                     sys.executable,
                     "-c",
-                    "import time; print('before external term', flush=True); time.sleep(60)",
+                    (
+                        "import pathlib, sys, time; "
+                        "print('before external term', flush=True); "
+                        "pathlib.Path(sys.argv[1]).touch(); time.sleep(60)"
+                    ),
+                    str(child_ready),
                 ]
             )
-            time.sleep(0.1)
+            # Synchronize with both the producer and the collector's SIGTERM
+            # handler. A fixed sleep is flaky on loaded runners.
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if collector.poll() is not None:
+                    self.fail("collector exited before external SIGTERM test")
+                status = pathlib.Path(f"/proc/{collector.pid}/status").read_text()
+                caught = next(
+                    line.split()[1]
+                    for line in status.splitlines()
+                    if line.startswith("SigCgt:")
+                )
+                if child_ready.exists() and (
+                    int(caught, 16) & (1 << (signal.SIGTERM - 1))
+                ):
+                    break
+                time.sleep(0.01)
+            else:
+                collector.kill()
+                collector.wait(timeout=5)
+                self.fail("collector/producer did not become ready")
             collector.terminate()
             self.assertEqual(collector.wait(timeout=5), 143)
             self.assertEqual(output.read_bytes(), b"before external term\n")
@@ -250,6 +277,60 @@ class BoundedLogTest(unittest.TestCase):
                 time.sleep(0.02)
             else:
                 self.fail("TERM-ignoring collector child escaped its process group")
+
+    def test_timeout_kills_descendant_even_if_it_closed_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "output.log"
+            pid_file = pathlib.Path(directory) / "grandchild.pid"
+            program = (
+                "import os, pathlib, signal, sys, time\n"
+                "pid = os.fork()\n"
+                "if pid == 0:\n"
+                "    os.close(1)\n"
+                "    os.close(2)\n"
+                "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                "    time.sleep(60)\n"
+                "    os._exit(0)\n"
+                "pathlib.Path(sys.argv[1]).write_text(str(pid))\n"
+                "print('parent diagnostic', flush=True)\n"
+                "time.sleep(60)\n"
+            )
+            try:
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(HELPER),
+                        "--output", str(output),
+                        "--max-bytes", "128",
+                        "--timeout-seconds", "0.5",
+                        "--kill-after-seconds", "0.1",
+                        "--",
+                        sys.executable, "-c", program, str(pid_file),
+                    ],
+                    check=False,
+                    timeout=6,
+                )
+                self.assertEqual(result.returncode, 124)
+                self.assertIn(b"parent diagnostic\n", output.read_bytes())
+                pid = int(pid_file.read_text(encoding="utf-8"))
+                deadline = time.monotonic() + 1
+                while time.monotonic() < deadline:
+                    try:
+                        proc_stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
+                    except FileNotFoundError:
+                        break
+                    if proc_stat.rsplit(") ", 1)[1].split()[0] == "Z":
+                        break
+                    time.sleep(0.02)
+                else:
+                    self.fail("TERM-ignoring grandchild remained alive after EOF")
+            finally:
+                if pid_file.exists():
+                    pid = int(pid_file.read_text(encoding="utf-8"))
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
 
 
 if __name__ == "__main__":
