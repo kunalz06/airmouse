@@ -64,6 +64,7 @@ telemetry before success. Phase 3A instantiates no Action, Offboard, Mission,
 MissionRaw, or Param plugin and all command-shaped `IVehicle` methods are
 locally rejected with `RejectedByPhasePolicy`.
 
-The integration launcher checks that UDP 14540 is free before startup, uses a
-finite deadline, records logs under ignored `simulation/output/phase-3a/`,
-and removes only its own named containers.
+The integration launcher checks that UDP 14540 is free before startup, applies
+an independent hard client deadline (default 120 seconds), records bounded
+first/last diagnostics (at most 512 KiB per log) under ignored
+`simulation/output/phase-3a/`, and removes only its own named containers.
