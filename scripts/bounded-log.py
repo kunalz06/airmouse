@@ -238,13 +238,17 @@ def main() -> int:
                 time.sleep(wait_seconds)
     finally:
         selector.close()
-        for signum, handler in prior_handlers.items():
-            signal.signal(signum, handler)
+        try:
+            # Retain signal forwarding until the atomic replacement completes;
+            # restoring SIGTERM/SIGINT first could discard timeout diagnostics.
+            write_output(arguments.output, retained, head, tail, truncated, marker)
+        finally:
+            for signum, handler in prior_handlers.items():
+                signal.signal(signum, handler)
 
     # poll() has reaped the direct child when it exited. If it did not exit after
     # SIGKILL, keep the collector bounded and still preserve its diagnostics.
     status = child.poll()
-    write_output(arguments.output, retained, head, tail, truncated, marker)
     if externally_signalled is not None:
         return 128 + externally_signalled
     if timed_out:

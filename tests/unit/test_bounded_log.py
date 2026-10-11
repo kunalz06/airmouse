@@ -166,6 +166,33 @@ class BoundedLogTest(unittest.TestCase):
             self.assertEqual(collector.wait(timeout=5), 143)
             self.assertEqual(output.read_bytes(), b"before external term\n")
 
+    def test_signal_during_atomic_log_write_preserves_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "output.log"
+            runner = (
+                "import importlib.util, os, signal, sys\n"
+                "source, output = sys.argv[1:]\n"
+                "spec = importlib.util.spec_from_file_location('bounded_log', source)\n"
+                "module = importlib.util.module_from_spec(spec)\n"
+                "spec.loader.exec_module(module)\n"
+                "original = module.write_output\n"
+                "def interrupt(*args):\n"
+                "    os.kill(os.getpid(), signal.SIGTERM)\n"
+                "    original(*args)\n"
+                "module.write_output = interrupt\n"
+                "sys.argv = [source, '--output', output, '--max-bytes', '128', "
+                "'--', sys.executable, '-c', "
+                "\"print('late-shutdown', flush=True)\"]\n"
+                "raise SystemExit(module.main())\n"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", runner, str(HELPER), str(output)],
+                check=False,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 143)
+            self.assertEqual(output.read_bytes(), b"late-shutdown\n")
+
     def test_timeout_kills_term_ignoring_process_group_and_flushes_log(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory) / "output.log"
