@@ -176,8 +176,7 @@ TEST(MavsdkVehicle, RepeatedDiscoveryTimeoutsReleaseOwnedEndpoint) {
   }
 }
 
-TEST(MavsdkVehicle,
-     ConcurrentVersionCallsReleaseTheEndpointBeforeReconnect) {
+TEST(MavsdkVehicle, ConcurrentVersionCallsReleaseTheEndpointBeforeReconnect) {
   auto sender = start_heartbeat_sender(49696, kPx4, 30ms, 5s);
   MavsdkVehicle vehicle;
   ASSERT_EQ(vehicle.connect("udpin://127.0.0.1:49696", 1s),
