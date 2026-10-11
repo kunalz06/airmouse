@@ -242,17 +242,19 @@ sim_started=true
 
 set +e
 client_started=true
-timeout --foreground --signal=TERM --kill-after=10s "${client_timeout_seconds}s" \
-  python3 "${project_root}/scripts/bounded-log.py" \
-    --output "${client_log}" --max-bytes "${log_max_bytes}" -- \
-    docker run --rm --name "${client_name}" --network host --init \
-      -v "${project_root}:/workspace:ro" -w /workspace \
-      "${dev_image}" "${client_binary}" \
-        --sim \
-        --endpoint udpin://127.0.0.1:14540 \
-        --discovery-timeout-ms "$((timeout_seconds * 1000))" \
-        --telemetry-max-age-ms 2000 \
-        --telemetry-wait-ms 15000
+# The collector owns the independent client wallclock cap so it can flush the
+# atomic bounded diagnostic log after terminating an unresponsive Docker run.
+python3 "${project_root}/scripts/bounded-log.py" \
+  --output "${client_log}" --max-bytes "${log_max_bytes}" \
+  --timeout-seconds "${client_timeout_seconds}" --kill-after-seconds 10 -- \
+  docker run --rm --name "${client_name}" --network host --init \
+    -v "${project_root}:/workspace:ro" -w /workspace \
+    "${dev_image}" "${client_binary}" \
+      --sim \
+      --endpoint udpin://127.0.0.1:14540 \
+      --discovery-timeout-ms "$((timeout_seconds * 1000))" \
+      --telemetry-max-age-ms 2000 \
+      --telemetry-wait-ms 15000
 client_status=$?
 set -e
 

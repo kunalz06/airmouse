@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import pathlib
+import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -89,6 +91,138 @@ class BoundedLogTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 143)
             self.assertEqual(output.read_bytes(), b"")
+
+    def test_rejects_malformed_timeout_arguments(self) -> None:
+        for argument, value in (
+            ("--timeout-seconds", "0"),
+            ("--timeout-seconds", "not-a-number"),
+            ("--kill-after-seconds", "-1"),
+        ):
+            with self.subTest(argument=argument, value=value):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(HELPER),
+                        "--output",
+                        "unused.log",
+                        "--max-bytes",
+                        "128",
+                        argument,
+                        value,
+                        "--",
+                        sys.executable,
+                        "-c",
+                        "pass",
+                    ],
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(result.returncode, 2)
+
+    def test_normal_client_exit_with_collector_timeout_options(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "output.log"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(HELPER),
+                    "--output",
+                    str(output),
+                    "--max-bytes",
+                    "128",
+                    "--timeout-seconds",
+                    "1",
+                    "--kill-after-seconds",
+                    "0.1",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "print('client completed')",
+                ],
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(output.read_bytes(), b"client completed\n")
+
+    def test_external_term_returns_signal_status_after_flushing_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "output.log"
+            collector = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(HELPER),
+                    "--output",
+                    str(output),
+                    "--max-bytes",
+                    "128",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "import time; print('before external term', flush=True); time.sleep(60)",
+                ]
+            )
+            time.sleep(0.1)
+            collector.terminate()
+            self.assertEqual(collector.wait(timeout=5), 143)
+            self.assertEqual(output.read_bytes(), b"before external term\n")
+
+    def test_timeout_kills_term_ignoring_process_group_and_flushes_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "output.log"
+            pid_file = pathlib.Path(directory) / "pids"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(HELPER),
+                    "--output",
+                    str(output),
+                    "--max-bytes",
+                    "128",
+                    "--timeout-seconds",
+                    "0.2",
+                    "--kill-after-seconds",
+                    "0.1",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    (
+                        "import os, pathlib, signal, sys, time; "
+                        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                        "child = os.fork(); "
+                        "child and pathlib.Path(sys.argv[1]).write_text("
+                        "f'{os.getpid()} {child}', encoding='utf-8'); "
+                        "print('initial diagnostic', flush=True); "
+                        "time.sleep(60)"
+                    ),
+                    str(pid_file),
+                ],
+                check=False,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 124)
+            self.assertIn(b"initial diagnostic\n", output.read_bytes())
+
+            deadline = time.monotonic() + 1
+            pids = [int(pid) for pid in pid_file.read_text(encoding="utf-8").split()]
+            while time.monotonic() < deadline:
+                remaining = []
+                for pid in pids:
+                    try:
+                        os.kill(pid, 0)
+                        # Containers without a subreaper may leave a terminated
+                        # grandchild as a zombie. A zombie cannot execute or
+                        # retain the stdout pipe, so it is not a live escape.
+                        stat = pathlib.Path(f"/proc/{pid}/stat").read_text()
+                    except (ProcessLookupError, FileNotFoundError):
+                        continue
+                    if stat.rsplit(") ", 1)[1].split()[0] == "Z":
+                        continue
+                    remaining.append(pid)
+                if not remaining:
+                    break
+                time.sleep(0.02)
+            else:
+                self.fail("TERM-ignoring collector child escaped its process group")
 
 
 if __name__ == "__main__":
