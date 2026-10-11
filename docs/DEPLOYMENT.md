@@ -16,8 +16,29 @@ Phase 4B verifies image transfer, architecture, startup, deterministic failure w
 
 **Safety boundary:** This Phase 4A image contains no enabled arming, disarming, takeoff, land, Hold, Offboard, position, velocity, mission or parameter command plugins. These remain locally rejected by `RejectedByPhasePolicy`. Phase 3B is a separate unmerged and unapproved track.
 
-## APT evidence and CI identity required at release consumption
+## APT reproducibility evidence and CI identity required at release consumption
 
-The Phase 4A CI evidence artifact now also contains `phase-4a-apt-closure/{mavsdk-build,app-build,runtime}-packages.tsv` and `summary.json` with exact package names, versions, architecture and SHA-256 checksums. Validate the manifest's recorded checksums before any future release. This inventory is a record of packages actually resolved by APT, **not** a promise that the upstream repositories can reproduce the exact same packages later. Any release rebuilt from current apt indexes creates a new separately reviewed artifact.
+Only `docker/runtime/Dockerfile` uses the signed Ubuntu snapshot pinned in
+`config/versions.lock` (`20261001T000000Z`, Noble plus updates, security and
+backports). Every source entry is `signed-by` Ubuntu's archive keyring, and
+APT uses strict update errors. TLS bootstrap is an in-repository SHA-256-pinned
+trust bundle with provenance in `docker/apt/README.md`; no TLS peer or APT
+signature verification is disabled. `docker/dev/Dockerfile` and
+`docker/sim/Dockerfile` are unchanged by this runtime APT work.
+
+The committed `config/apt-closure.lock.json` and
+`config/apt-closure/{mavsdk-build,app-build,runtime}-packages.tsv` are the
+full byte-sorted installed package/version/architecture closure for the three
+ARM64 runtime stages. CI fails before building if either the snapshot policy or
+any closure hash is changed. CI evidence contains a second copy of those
+inventories and a summary tied to the committed lock SHA-256. Validate both the
+manifest and lock checksums before any future release. Do not use the explicit
+bootstrap regeneration path as a routine build mode.
 
 Verify the distinct GitHub PR head SHA and checked-out merge SHA, CI run ID/attempt, source-commit timestamp and wall-clock UTC build time along with the immutable OCI manifest digest. Continue to prohibit Pi deployment without a separately authorized digest-qualified artifact transport.
+
+The first generated closure contains 197 MAVSDK-build, 170 application-build,
+and 94 runtime packages. Its authorized-host bootstrap succeeded; the locked
+replay is still running. This is not hosted-CI evidence and does not authorize
+hardware deployment, publication, or Phase 4A completion. Final hosted CI and
+an independent review remain required.

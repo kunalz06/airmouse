@@ -10,8 +10,9 @@ usage() {
 Usage: scripts/build-runtime-arm64.sh [--load] [--image-ref IMAGE] [--output OCI_TAR]
 
 Builds the pinned NIDAR runtime for linux/arm64. By default it exports an OCI
-archive; --load imports the ARM64 image into the local Docker store only when
-container-based verification requires it.
+archive; --load imports the same ARM64 image into the local Docker store for
+container-based verification. The normal build is always a locked APT replay.
+APT closure generation is isolated in scripts/regenerate-runtime-apt-closure.sh.
 EOF
 }
 
@@ -54,20 +55,26 @@ if [[ "${ci_run_id}" != local ]]; then
     exit 1
   }
 fi
-python3 - "${build_timestamp}" "${source_timestamp}" <<'VALIDATE_TIME'
+source_date_epoch=$(python3 - "${build_timestamp}" "${source_timestamp}" <<'VALIDATE_TIME'
 from datetime import datetime, timezone
 import sys
-built = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+raw_built = sys.argv[1]
+try:
+    built = datetime.strptime(raw_built, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+except ValueError as error:
+    raise SystemExit("build timestamp must be canonical UTC YYYY-MM-DDTHH:MM:SSZ") from error
 source = datetime.fromisoformat(sys.argv[2].replace("Z", "+00:00"))
-if built.tzinfo is None or built.utcoffset().total_seconds() != 0:
-    raise SystemExit("build timestamp must carry a UTC timezone")
 if source.tzinfo is None:
     raise SystemExit("source commit timestamp must carry a timezone")
 if (built - datetime.now(timezone.utc)).total_seconds() > 300:
     raise SystemExit("build timestamp appears in the future")
+if (datetime.now(timezone.utc) - built).total_seconds() > 900:
+    raise SystemExit("build timestamp is too old to be a current wall-clock build initiation")
 if built.timestamp() < source.timestamp():
     raise SystemExit("build wall-clock timestamp is before source commit")
+print(int(built.timestamp()))
 VALIDATE_TIME
+)
 runtime_base_digest=$(awk -F '"' '/^ubuntu_24_04_image_index =/ { print $2 }' config/versions.lock)
 mavsdk_source_url=$(awk -F '"' '/^mavsdk_arm64_source_url =/ { print $2 }' config/versions.lock)
 mavsdk_source_commit=$(awk -F '"' '/^mavsdk_arm64_source_commit =/ { print $2 }' config/versions.lock)
@@ -87,6 +94,7 @@ build_args=(
   --tag "${image_ref}"
   --build-arg "NIDAR_GIT_COMMIT=${git_commit}"
   --build-arg "NIDAR_BUILD_TIMESTAMP=${build_timestamp}"
+  --build-arg "SOURCE_DATE_EPOCH=${source_date_epoch}"
   --build-arg "NIDAR_SOURCE_TIMESTAMP=${source_timestamp}"
   --build-arg "NIDAR_CI_RUN_ID=${ci_run_id}"
   --build-arg "NIDAR_CI_RUN_ATTEMPT=${ci_run_attempt}"
@@ -97,12 +105,14 @@ build_args=(
   --build-arg "RUNTIME_BASE_DIGEST=${runtime_base_digest}"
   --build-arg "MAVSDK_SOURCE_URL=${mavsdk_source_url}"
   --build-arg "MAVSDK_SOURCE_COMMIT=${mavsdk_source_commit}"
+  --build-arg "NIDAR_APT_LOCK_MODE=locked"
+  --build-arg "NIDAR_APT_BASELINE_GENERATION=0"
 )
 
+mkdir -p "$(dirname "${output_path}")"
+outputs=(--output "type=oci,dest=${output_path}")
 if [[ "${load_image}" == true ]]; then
-  docker buildx build "${build_args[@]}" --load .
-else
-  mkdir -p "$(dirname "${output_path}")"
-  docker buildx build "${build_args[@]}" --output "type=oci,dest=${output_path}" .
-  printf 'OCI artifact: %s\n' "${output_path}"
+  outputs+=(--load)
 fi
+docker buildx build "${build_args[@]}" "${outputs[@]}" .
+printf 'OCI artifact: %s\n' "${output_path}"

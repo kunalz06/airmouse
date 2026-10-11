@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Fail closed on pinned APT snapshot and committed ARM64 closure
+        run: python3 scripts/verify-runtime-apt-closure.py --check-repository
       - run: tests/integration/test_mavsdk_telemetry_patch.sh
       - run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/integration/test_apt_closure.py -v
       - run: docker build --platform linux/amd64 -t nidar-dev -f docker/dev/Dockerfile .
@@ -53,7 +55,10 @@ jobs:
           printf 'NIDAR_PR_HEAD_SHA=%s\n' '${{ github.event.pull_request.head.sha || github.sha }}' >> "$GITHUB_ENV"
           printf 'NIDAR_BUILD_TIMESTAMP=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
       - name: Validate APT closure inventory parser
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/integration/test_apt_closure.py -v
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/integration/test_apt_closure.py -v
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests/integration/test_runtime_manifest.py -v
+          python3 scripts/verify-runtime-apt-closure.py --check-repository
       - name: Validate MAVSDK telemetry-only patch before ARM64 build
         run: tests/integration/test_mavsdk_telemetry_patch.sh
       - name: Register pinned ARM64 QEMU handler
@@ -67,8 +72,11 @@ jobs:
           docker buildx create --name nidar-builder --driver docker-container --use
           docker buildx inspect nidar-builder --bootstrap
           docker buildx inspect nidar-builder | grep -q linux/arm64
-      - name: Build and load linux/arm64 runtime
-        run: scripts/build-runtime-arm64.sh --load --image-ref nidar-runtime:phase-4a-ci
+      - name: Build, load, and export the same linux/arm64 runtime once
+        run: |
+          scripts/build-runtime-arm64.sh --load \
+            --output build/release/nidar-runtime-arm64.oci.tar \
+            --image-ref nidar-runtime:phase-4a-ci
       - name: Verify architecture, libraries, content and execution
         run: |
           tests/integration/test_runtime_arm64_artifact.sh nidar-runtime:phase-4a-ci
@@ -79,9 +87,8 @@ jobs:
           python3 scripts/verify-runtime-apt-closure.py \
             --image-ref nidar-runtime:phase-4a-ci \
             --output-dir build/release/phase-4a-apt-closure
-      - name: Export OCI archive and record immutable manifest
+      - name: Record immutable manifest from the single build output
         run: |
-          scripts/build-runtime-arm64.sh --output build/release/nidar-runtime-arm64.oci.tar
           python3 scripts/record-runtime-manifest.py \
             --oci build/release/nidar-runtime-arm64.oci.tar \
             --image-ref nidar-runtime:phase-4a-ci \
@@ -90,7 +97,8 @@ jobs:
           cat build/release/phase-4a-runtime-manifest.txt >> "$GITHUB_STEP_SUMMARY"
       - name: Check shell scripts and disk usage
         run: |
-          bash -n scripts/build-runtime-arm64.sh tests/integration/test_runtime_arm64_artifact.sh \
+          bash -n scripts/build-runtime-arm64.sh scripts/regenerate-runtime-apt-closure.sh \
+            docker/apt/install-locked.sh tests/integration/test_runtime_arm64_artifact.sh \
             tests/integration/test_runtime_arm64_execution.sh \
             tests/integration/test_runtime_image_policy.sh
           scripts/docker-disk-report.sh | tee build/release/phase-4a-disk-report.txt

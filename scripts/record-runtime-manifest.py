@@ -29,6 +29,33 @@ def archive_sha256(path: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
+def parse_canonical_utc_timestamp(value: object, field: str) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a UTC timestamp string")
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError as error:
+        raise ValueError(f"{field} must be canonical UTC YYYY-MM-DDTHH:MM:SSZ") from error
+    return parsed
+
+
+def validate_created_timestamps(expected: str, labels: dict, local_labels: dict,
+                                oci_config: dict, docker: dict) -> datetime:
+    """Bind exporter-produced creation fields to one captured build instant."""
+    built_at = parse_canonical_utc_timestamp(expected, "captured build timestamp")
+    observed = {
+        "OCI created label": labels.get("org.opencontainers.image.created"),
+        "loaded Docker created label": local_labels.get("org.opencontainers.image.created"),
+        "OCI config.created": oci_config.get("created"),
+        "loaded Docker image .Created": docker.get("Created"),
+    }
+    for name, value in observed.items():
+        parse_canonical_utc_timestamp(value, name)
+        if value != expected:
+            raise ValueError(f"{name} differs from captured build timestamp")
+    return built_at
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--oci", required=True, type=Path)
@@ -88,26 +115,22 @@ def main() -> None:
     source_timestamp = subprocess.check_output(
         ["git", "show", "-s", "--format=%cI", "HEAD"], text=True
     ).strip()
-    created = labels.get("org.opencontainers.image.created", "")
+    expected_created = os.environ.get("NIDAR_BUILD_TIMESTAMP", "")
+    if not expected_created:
+        raise ValueError("NIDAR_BUILD_TIMESTAMP captured at build initiation is required")
+    built_at = validate_created_timestamps(expected_created, labels, local_labels, config, docker)
+    created = expected_created
     checked_at = datetime.now(timezone.utc)
     try:
-        built_at = datetime.fromisoformat(created.replace("Z", "+00:00"))
         source_at = datetime.fromisoformat(source_timestamp.replace("Z", "+00:00"))
     except (ValueError, TypeError) as error:
         raise ValueError("invalid build/source timestamp") from error
-    if built_at.utcoffset() is None or built_at.utcoffset().total_seconds() != 0:
-        raise ValueError("build timestamp lacks UTC timezone")
     if source_at.utcoffset() is None:
         raise ValueError("Git source commit timestamp lacks timezone")
     if built_at < source_at or built_at > checked_at:
         raise ValueError("build wall-clock timestamp outside source-to-manifest window")
     if (checked_at - built_at).total_seconds() > 4 * 3600:
         raise ValueError("build wall-clock timestamp too old for fresh CI verification")
-    expected_created = os.environ.get("NIDAR_BUILD_TIMESTAMP", "")
-    if os.environ.get("GITHUB_RUN_ID") and not expected_created:
-        raise ValueError("CI build timestamp was not captured before building")
-    if expected_created and created != expected_created:
-        raise ValueError("build timestamp differs from CI captured timestamp")
     run_id = os.environ.get("GITHUB_RUN_ID", "local")
     run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "0")
     workflow = os.environ.get("GITHUB_WORKFLOW", "local")
@@ -135,8 +158,16 @@ def main() -> None:
         if labels.get(name) != value or local_labels.get(name) != value:
             raise ValueError(f"provenance mismatch for {name}")
     summary = json.loads(args.apt_summary.read_text())
-    if summary.get("schema") != "nidar-phase-4a-apt-closure-v1":
+    apt_schema = lock["ubuntu_24_04_arm64_apt_closure_schema"]
+    apt_lock_path = Path(lock["ubuntu_24_04_arm64_apt_closure_lock"])
+    if summary.get("schema") != apt_schema:
         raise ValueError("unknown apt closure evidence schema")
+    apt_lock_bytes = apt_lock_path.read_bytes()
+    if summary.get("evidence_lock_sha256") != sha(apt_lock_bytes):
+        raise ValueError("APT evidence was not produced from the committed closure lock")
+    apt_lock = json.loads(apt_lock_bytes)
+    if summary.get("snapshot") != apt_lock.get("snapshot"):
+        raise ValueError("APT evidence snapshot differs from committed closure lock")
     stages = summary["stages"]
     apt_records = []
     if set(stages) != {"mavsdk-build", "app-build", "runtime"}:
@@ -152,6 +183,10 @@ def main() -> None:
             raise ValueError(f"{stage}: APT evidence checksum mismatch")
         apt_records.extend([f"apt_{stage}_package_count={info['package_count']}",
                             f"apt_{stage}_sha256={digest}"])
+    apt_records.extend([
+        f"apt_snapshot_url={summary['snapshot']['url']}",
+        f"apt_closure_lock_sha256={summary['evidence_lock_sha256']}",
+    ])
     # Containerd-backed Docker image stores can report the manifest digest as
     # image Id; classic Docker stores can report the config digest.
     if docker["Id"] not in (manifest_digest, config_digest):
@@ -174,6 +209,8 @@ def main() -> None:
         f"application_version={labels.get('org.opencontainers.image.version')}",
         f"source_commit_timestamp={source_timestamp}",
         f"build_timestamp={created}",
+        f"oci_config_created={config['created']}",
+        f"local_docker_created={docker['Created']}",
         f"ci_run_id={run_id}",
         f"ci_run_attempt={run_attempt}",
         f"ci_workflow={workflow}",

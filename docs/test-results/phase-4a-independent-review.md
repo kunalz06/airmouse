@@ -38,3 +38,25 @@ Following successful hosted CI [run #91](https://github.com/kunalz06/airmouse/ac
 - **Provenance:** CI captures one wall-clock UTC build timestamp in `GITHUB_ENV` before building; both --load and --output use that exact timestamp. Runtime OCI labels and manifest separately record the Git checkout/merge SHA, the PR head SHA, source commit timestamp, build timestamp, GitHub Actions workflow, run ID, attempt and repository. Manifest validation compares those fields with CI environment values and independently checks wall-clock/date ordering and OCI-vs-loaded image identity.
 - **Offline validation:** 7 positive/negative APT closure parser tests, shell syntax, SHA-pinned MAVSDK patch test, ShellCheck, YAML CI contract and Python syntax checks performed. Fresh ARM64 CI must prove the stage manifests are actually generated/copied and the final image/OCI provenance checks pass.
 - **Still gated:** no independent final-revision approval; no merge, artifact publication to a registry, or Pi/CUAV deployment until CI is green, reviewer confirms adequacy, and the ledger is updated.
+
+## Addendum — 2026-10-11 (implementation follow-up; not reviewer approval)
+
+The current uncommitted Phase 4A branch addresses the three Important findings
+with a follow-up implementation: ordinary runtime builds no longer expose a
+bootstrap APT switch and always request locked mode; bootstrap remains isolated
+to the explicit `apt-closure-export` regeneration target. APT snapshot/trust
+and closure metadata are now derived from `config/versions.lock`, and the
+normal runtime workflow performs one build that simultaneously loads and
+exports the OCI archive while binding `SOURCE_DATE_EPOCH` to the captured UTC
+build timestamp. Manifest approval now compares that timestamp with the OCI
+config's real `created` value and local Docker image `.Created`, not only a
+custom label.
+
+The first generated closure is checked in (MAVSDK build 197 packages,
+application build 170, runtime 94). An authorized host completed the ARM64
+APT-only bootstrap; a separate locked ARM64 APT-only replay matched all three
+inventories byte-for-byte. Only the runtime Dockerfile is
+in this APT snapshot scope; development and simulation Dockerfiles remain
+unchanged. The final hosted CI run and a fresh independent review are still
+pending. This addendum records implementation status only and does not amend
+the review verdict or mark Phase 4A approved or complete.

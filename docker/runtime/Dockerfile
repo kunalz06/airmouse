@@ -1,17 +1,24 @@
 ARG UBUNTU_24_04_IMAGE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+ARG NIDAR_APT_LOCK_MODE=locked
+ARG NIDAR_APT_BASELINE_GENERATION=0
 
-FROM ${UBUNTU_24_04_IMAGE} AS mavsdk-build
+FROM ${UBUNTU_24_04_IMAGE} AS mavsdk-apt
+ARG NIDAR_APT_LOCK_MODE
+ARG NIDAR_APT_BASELINE_GENERATION
+COPY docker/apt/nidar-snapshot.sources /etc/apt/sources.list.d/nidar-snapshot.sources
+COPY docker/apt/nidar-snapshot-ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY docker/apt/install-locked.sh /usr/local/lib/nidar/install-locked-apt
+COPY config/apt-closure /opt/nidar-apt-closure
+
+RUN NIDAR_APT_LOCK_MODE="${NIDAR_APT_LOCK_MODE}" \
+    NIDAR_APT_BASELINE_GENERATION="${NIDAR_APT_BASELINE_GENERATION}" \
+    /bin/sh /usr/local/lib/nidar/install-locked-apt mavsdk-build \
+      build-essential ca-certificates cmake git ninja-build pkg-config python3 python3-pip
+
+FROM mavsdk-apt AS mavsdk-build
 ARG MAVSDK_SOURCE_URL=https://github.com/mavlink/MAVSDK.git
 ARG MAVSDK_SOURCE_COMMIT=9e3ca17faa84aa868caea10a3bbdab7e53810ced
 COPY docker/runtime/mavsdk-telemetry-only.patch /tmp/mavsdk-telemetry-only.patch
-
-RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    build-essential ca-certificates cmake git ninja-build pkg-config python3 python3-pip \
- && mkdir -p /opt/nidar-provenance \
- && LC_ALL=C dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort > /opt/nidar-provenance/mavsdk-build-packages.tsv \
- && test -s /opt/nidar-provenance/mavsdk-build-packages.tsv \
- && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --filter=blob:none "${MAVSDK_SOURCE_URL}" /opt/mavsdk-src \
  && cd /opt/mavsdk-src \
@@ -31,25 +38,53 @@ RUN cmake -S /opt/mavsdk-src -B /opt/mavsdk-build -G Ninja \
  && cmake --build /opt/mavsdk-build --parallel \
  && cmake --install /opt/mavsdk-build
 
-FROM ${UBUNTU_24_04_IMAGE} AS app-build
+FROM ${UBUNTU_24_04_IMAGE} AS app-apt
+ARG NIDAR_APT_LOCK_MODE
+ARG NIDAR_APT_BASELINE_GENERATION
+COPY docker/apt/nidar-snapshot.sources /etc/apt/sources.list.d/nidar-snapshot.sources
+COPY docker/apt/nidar-snapshot-ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY docker/apt/install-locked.sh /usr/local/lib/nidar/install-locked-apt
+COPY config/apt-closure /opt/nidar-apt-closure
+
+RUN NIDAR_APT_LOCK_MODE="${NIDAR_APT_LOCK_MODE}" \
+    NIDAR_APT_BASELINE_GENERATION="${NIDAR_APT_BASELINE_GENERATION}" \
+    /bin/sh /usr/local/lib/nidar/install-locked-apt app-build \
+      build-essential cmake ninja-build
+
+FROM app-apt AS app-build
 COPY --from=mavsdk-build /opt/mavsdk-install /opt/mavsdk-install
 WORKDIR /workspace
 COPY . .
 
-RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    build-essential cmake ninja-build \
- && cmake -S . -B build/release -G Ninja \
+RUN cmake -S . -B build/release -G Ninja \
       -DBUILD_TESTING=OFF \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH=/opt/mavsdk-install \
  && cmake --build build/release --parallel \
- && mkdir -p /opt/nidar-provenance \
- && LC_ALL=C dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort > /opt/nidar-provenance/app-build-packages.tsv \
- && test -s /opt/nidar-provenance/app-build-packages.tsv \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
-FROM ${UBUNTU_24_04_IMAGE} AS runtime
+FROM ${UBUNTU_24_04_IMAGE} AS runtime-apt
+ARG NIDAR_APT_LOCK_MODE
+ARG NIDAR_APT_BASELINE_GENERATION
+COPY docker/apt/nidar-snapshot.sources /etc/apt/sources.list.d/nidar-snapshot.sources
+COPY docker/apt/nidar-snapshot-ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY docker/apt/install-locked.sh /usr/local/lib/nidar/install-locked-apt
+COPY config/apt-closure /opt/nidar-apt-closure
+
+RUN NIDAR_APT_LOCK_MODE="${NIDAR_APT_LOCK_MODE}" \
+    NIDAR_APT_BASELINE_GENERATION="${NIDAR_APT_BASELINE_GENERATION}" \
+    /bin/sh /usr/local/lib/nidar/install-locked-apt runtime \
+      ca-certificates libgcc-s1 libstdc++6
+
+FROM scratch AS apt-closure-export
+COPY --from=mavsdk-apt /opt/nidar-provenance/mavsdk-build-packages.tsv /mavsdk-build-packages.tsv
+COPY --from=app-apt /opt/nidar-provenance/app-build-packages.tsv /app-build-packages.tsv
+COPY --from=runtime-apt /opt/nidar-provenance/runtime-packages.tsv /runtime-packages.tsv
+
+FROM runtime-apt AS runtime
+ARG NIDAR_APT_LOCK_MODE
+ARG NIDAR_APT_BASELINE_GENERATION
+ARG SOURCE_DATE_EPOCH
 ARG NIDAR_GIT_COMMIT
 ARG NIDAR_BUILD_TIMESTAMP
 ARG NIDAR_SOURCE_TIMESTAMP
@@ -63,6 +98,12 @@ ARG NIDAR_VERSION=0.2.0
 ARG MAVSDK_VERSION=3.17.2
 ARG MAVSDK_SOURCE_COMMIT=9e3ca17faa84aa868caea10a3bbdab7e53810ced
 ARG RUNTIME_BASE_DIGEST=sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+
+# The final production target can never be built from bootstrap package input.
+# The isolated apt-closure-export target above is the only bootstrap consumer.
+RUN test "${NIDAR_APT_LOCK_MODE}" = "locked" \
+ && test "${NIDAR_APT_BASELINE_GENERATION}" = "0" \
+ && test -n "${SOURCE_DATE_EPOCH}"
 
 LABEL org.opencontainers.image.title="nidar-runtime" \
       org.opencontainers.image.description="NIDAR telemetry-only ARM64 runtime" \
@@ -82,16 +123,11 @@ LABEL org.opencontainers.image.title="nidar-runtime" \
       io.nidar.mavsdk.version="${MAVSDK_VERSION}" \
       io.nidar.mavsdk.source-commit="${MAVSDK_SOURCE_COMMIT}"
 
-RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates libgcc-s1 libstdc++6 \
- && mkdir -p /usr/local/share/nidar/provenance \
- && LC_ALL=C dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' | LC_ALL=C sort > /usr/local/share/nidar/provenance/runtime-packages.tsv \
- && test -s /usr/local/share/nidar/provenance/runtime-packages.tsv \
- && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /usr/local/share/nidar/provenance \
+ && cp /opt/nidar-provenance/runtime-packages.tsv /usr/local/share/nidar/provenance/runtime-packages.tsv \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /opt/nidar-apt-closure /usr/local/lib/nidar
 
-# Exact installed-package version/architecture closure for each stage.
-# These inventories are evidence only, not pinned .deb payload hashes.
+# Exact installed package/version/architecture closure for all three stages.
 COPY --from=mavsdk-build /opt/nidar-provenance/mavsdk-build-packages.tsv /usr/local/share/nidar/provenance/
 COPY --from=app-build /opt/nidar-provenance/app-build-packages.tsv /usr/local/share/nidar/provenance/
 COPY --from=mavsdk-build /opt/mavsdk-install/lib/libmavsdk.so.3.17.2 /usr/local/lib/
