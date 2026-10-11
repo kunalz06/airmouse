@@ -1,0 +1,6 @@
+Phase 4A local ARM64 runtime execution evidence
+Captured: 2026-10-09
+Command: tests/integration/test_runtime_arm64_execution.sh nidar-runtime:phase-4a-local
+Result: exit 0
+Output: runtime ARM64 execution checks passed: nidar-runtime:phase-4a-local
+Verified: ARM64 runtime starts via QEMU, --help accepts safe CLI flags, no-PX4 discovery terminates with expected failure code and no active flight commands are exposed.

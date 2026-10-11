@@ -1,0 +1,10 @@
+Phase 4A local image policy evidence
+Captured: 2026-10-09
+Command: tests/integration/test_runtime_image_policy.sh nidar-runtime:phase-4a-local
+Result: exit 0
+Output: runtime image policy passed: image=nidar-runtime:phase-4a-local, bytes=173576024, max=220000000
+Negative test: NIDAR_MAX_RUNTIME_BYTES=1 ... returned nonzero as expected.
+Command: tests/integration/test_runtime_arm64_artifact.sh nidar-runtime:phase-4a-local
+Result: exit 0
+Output: runtime ARM64 artifact policy passed: nidar-runtime:phase-4a-local
+Checks: architecture, Ubuntu 24.04 OS-release, numeric non-root user, libraries, banned toolchain/caches, image budget.
