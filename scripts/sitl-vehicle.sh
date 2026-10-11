@@ -29,6 +29,22 @@ cleanup_deadline=0
 sim_pid=""
 sim_started=false
 client_started=false
+pending_signal_status=0
+
+is_confirmed_absent_container_error() {
+  local name="$1"
+  local error="$2"
+
+  case "${error}" in
+    "Error: No such object: ${name}" | \
+    "Error: No such container: ${name}" | \
+    "Error response from daemon: No such object: ${name}" | \
+    "Error response from daemon: No such container: ${name}")
+      return 0
+      ;;
+  esac
+  return 1
+}
 
 cleanup_remaining_seconds() {
   local remaining=$((cleanup_deadline - SECONDS))
@@ -52,16 +68,50 @@ inspect_cleanup_container() {
   fi
 
   local status
+  local inspect_error
+  local inspect_error_file
+  if ! inspect_error_file="$(mktemp "${TMPDIR:-/tmp}/nidar-sitl-inspect.XXXXXX")"; then
+    record_cleanup_failure "failed to create bounded inspect error file for ${name}"
+    return 2
+  fi
+
+  # Docker inspect normally emits only one diagnostic line. Limit a faulty
+  # client/daemon to 4 KiB so cleanup cannot accumulate unbounded stderr.
   if timeout --foreground --signal=TERM --kill-after=1s "${remaining}s" \
-    docker container inspect "${name}" >/dev/null 2>&1; then
+    bash -c 'ulimit -f 8; exec "$@"' _ \
+      docker container inspect "${name}" >/dev/null 2>"${inspect_error_file}"; then
+    rm -f "${inspect_error_file}"
     return 0
   else
     status=$?
   fi
-  if ((status == 1)); then
+  inspect_error="$(<"${inspect_error_file}")"
+  rm -f "${inspect_error_file}"
+  if ((status == 1)) && is_confirmed_absent_container_error "${name}" "${inspect_error}"; then
     return 1
   fi
+  if ((status == 1)); then
+    record_cleanup_failure "could not confirm ${name} is absent during cleanup"
+    return 2
+  fi
   record_cleanup_failure "failed to inspect ${name} during cleanup (status ${status})"
+  return 2
+}
+
+check_preflight_container() {
+  local name="$1"
+  local status
+  local inspect_error
+
+  if inspect_error="$(docker container inspect "${name}" 2>&1 >/dev/null)"; then
+    return 0
+  else
+    status=$?
+  fi
+  if ((status == 1)) && is_confirmed_absent_container_error "${name}" "${inspect_error}"; then
+    return 1
+  fi
+  echo "failed to inspect existing container ${name}; refusing to continue" >&2
   return 2
 }
 
@@ -171,6 +221,11 @@ on_exit() {
   fi
   exit "${original_status}"
 }
+
+defer_signal() {
+  pending_signal_status="$1"
+}
+
 trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -204,8 +259,13 @@ finally:
 PY
 
 for name in "${sim_name}" "${client_name}"; do
-  if docker container inspect "${name}" >/dev/null 2>&1; then
+  if check_preflight_container "${name}"; then
     echo "refusing to replace existing container: ${name}" >&2
+    exit 2
+  else
+    inspect_status=$?
+  fi
+  if ((inspect_status != 1)); then
     exit 2
   fi
 done
@@ -231,6 +291,8 @@ mkdir -p "${output_dir}"
 : >"${sim_log}"
 : >"${client_log}"
 
+trap 'defer_signal 130' INT
+trap 'defer_signal 143' TERM
 python3 "${project_root}/scripts/bounded-log.py" \
   --output "${sim_log}" --max-bytes "${log_max_bytes}" -- \
   docker run --name "${sim_name}" --network host --init \
@@ -239,6 +301,11 @@ python3 "${project_root}/scripts/bounded-log.py" \
     bash -lc 'cd /opt/PX4-Autopilot && make px4_sitl gz_x500' &
 sim_pid=$!
 sim_started=true
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if ((pending_signal_status != 0)); then
+  exit "${pending_signal_status}"
+fi
 
 set +e
 client_started=true
