@@ -176,6 +176,29 @@ TEST(MavsdkVehicle, RepeatedDiscoveryTimeoutsReleaseOwnedEndpoint) {
   }
 }
 
+TEST(MavsdkVehicle, ConcurrentVersionCallsReleaseTheEndpointBeforeReconnect) {
+  auto sender = start_heartbeat_sender(49696, kPx4, 30ms, 5s);
+  MavsdkVehicle vehicle;
+  ASSERT_EQ(vehicle.connect("udpin://127.0.0.1:49696", 1s),
+            VehicleConnectionResult::Connected);
+
+  std::atomic_bool keep_querying{true};
+  auto version_queries = std::async(std::launch::async, [&] {
+    while (keep_querying.load()) {
+      (void)vehicle.mavsdk_version();
+    }
+  });
+
+  vehicle.disconnect();
+  keep_querying.store(false);
+  ASSERT_EQ(version_queries.wait_for(1s), std::future_status::ready);
+  version_queries.get();
+
+  EXPECT_EQ(vehicle.connect("udpin://127.0.0.1:49696", 1s),
+            VehicleConnectionResult::Connected);
+  vehicle.disconnect();
+}
+
 TEST(MavsdkVehicle, DisconnectIsIdempotent) {
   MavsdkVehicle vehicle;
   vehicle.disconnect();

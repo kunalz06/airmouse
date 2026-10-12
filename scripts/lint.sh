@@ -40,4 +40,5 @@ docker run --rm -v "${project_root}:/workspace:ro" -w /workspace nidar-dev \
     tests/integration/test_mavsdk_dependency.sh \
     tests/integration/test_mavsdk_boundary.sh \
     tests/integration/test_nidar_flight_cli.sh \
-    tests/sitl/test_vehicle_sitl.sh
+    tests/sitl/test_vehicle_sitl.sh \
+    tests/sitl/test_sitl_vehicle_ownership.sh

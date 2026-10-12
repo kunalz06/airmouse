@@ -29,6 +29,8 @@ jobs:
     timeout-minutes: 80
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify per-invocation Docker ownership and bounded preflight
+        run: tests/sitl/test_sitl_vehicle_ownership.sh
       - run: docker build --platform linux/amd64 -t nidar-dev -f docker/dev/Dockerfile .
       - run: ./scripts/configure.sh && ./scripts/build.sh
       - run: ./scripts/sanitize.sh

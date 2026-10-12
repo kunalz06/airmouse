@@ -101,7 +101,7 @@ explicit reconnect discovers a new system rather than reusing stale state.
 ## Lifecycle and failure semantics
 
 `connect(url, discovery_timeout)` first validates and adds the configured
-MAVSDK transport, retaining its removable connection handle, then waits only
+MAVSDK transport, retaining its connection bookkeeping, then waits only
 until the supplied deadline for PX4-autopilot discovery. A malformed URL or a
 transport that cannot be created/bound returns a typed transport failure
 immediately. A valid UDP listener that binds successfully but receives no
@@ -113,10 +113,14 @@ telemetry field, and resolves pending connection work with a typed failure.
 It does not silently retry. A caller explicitly invokes a new bounded
 `connect()` to reconnect. `disconnect()` is idempotent. Before returning it
 prevents new callback publication into adapter state, unsubscribes each owned
-MAVSDK/System/Telemetry subscription, removes its owned connection handle,
-invalidates telemetry, releases selected system/plugin state, and leaves a
-deterministic `Disconnected` state. No callback may capture an object that can
-end before the callback is made safe.
+MAVSDK/System/Telemetry subscription, invalidates telemetry, and releases
+selected system/plugin and connection-handle state. It does not explicitly
+remove the MAVSDK connection: after callbacks, plugins, and systems have been
+released, it destroys the dedicated SDK instance. That destructor owns
+connection teardown and worker shutdown, and `disconnect()` returns only after
+it has completed. The adapter then leaves a deterministic `Disconnected`
+state. No callback may capture an object that can end before the callback is
+made safe.
 
 The adapter does not hold its mutex while invoking blocking SDK operations,
 waiting for discovery, invoking user callbacks, or tearing down an SDK object
