@@ -24,13 +24,13 @@ calls="${FAKE_DOCKER_CALLS:?}"
 mode="${FAKE_DOCKER_MODE:-normal}"
 
 next_id() {
-  local lock="${state}/lock"
-  while ! mkdir "${lock}" 2>/dev/null; do sleep 0.01; done
+  local lock="${state}/counter.lock"
+  exec {counter_lock_fd}>"${lock}"
+  flock "${counter_lock_fd}"
   local number=0
   [[ -r "${state}/counter" ]] && number="$(<"${state}/counter")"
   number=$((number + 1))
   printf '%s\n' "${number}" >"${state}/counter"
-  rmdir "${lock}"
   printf '%064x\n' "${number}"
 }
 
@@ -111,6 +111,7 @@ case "${1:-}" in
       printf '%s\n' "${name}" >"${state}/${id}.name"
       printf '%s\n' "${token}" >"${state}/${id}.token"
       [[ -n "${cidfile}" ]] && printf '%s\n' "${id}" >"${cidfile}"
+      [[ "${mode}" == persistent-client ]] && : >"${state}/persistent-client-ready"
       printf '%s\n' connection=connected component=companion-computer forwarding=off telemetry=ready
       if [[ "${mode}" == client-name-reuse ]]; then
         rm -f "${state}/${id}.name" "${state}/${id}.token"
@@ -172,7 +173,7 @@ run_sitl() {
   local output="$2"
   local temporary_directory="${3:-${fixture_dir}/tmp-default}"
   local client_timeout=120
-  [[ "${mode}" == persistent-client ]] && client_timeout=1
+  [[ "${mode}" == persistent-client ]] && client_timeout=2
   mkdir -p "${temporary_directory}"
   set +e
   PATH="${fake_bin}:${PATH}" \
@@ -189,6 +190,17 @@ run_sitl() {
   local status=$?
   set -e
   return "${status}"
+}
+
+wait_for_sitl_lock_release() {
+  local deadline=$((SECONDS + 5))
+  while ! flock -n /tmp/nidar-sitl-vehicle.lock -c true 2>/dev/null; do
+    if ((SECONDS >= deadline)); then
+      echo "previous SITL launcher retained the fixed-port lock" >&2
+      return 1
+    fi
+    sleep 0.05
+  done
 }
 
 assert_only_verified_ids_removed() {
@@ -211,18 +223,38 @@ assert_only_verified_ids_removed() {
 # The fixed loopback endpoint is exclusive: concurrent launch attempts must
 # serialize before Docker starts, rather than sharing PX4 telemetry or logs.
 : >"${fake_calls}"
-run_sitl normal "${fixture_dir}/one.log" "${fixture_dir}/tmp-one" & first_pid=$!
-run_sitl normal "${fixture_dir}/two.log" "${fixture_dir}/tmp-two" & second_pid=$!
+wait_for_sitl_lock_release
+lock_ready="${fixture_dir}/lock-ready"
+lock_release="${fixture_dir}/lock-release"
+flock /tmp/nidar-sitl-vehicle.lock bash -c \
+  'touch "$1"; while [[ ! -e "$2" ]]; do sleep 0.01; done' \
+  _ "${lock_ready}" "${lock_release}" & lock_holder_pid=$!
+deadline=$((SECONDS + 5))
+until [[ -e "${lock_ready}" ]]; do
+  if ((SECONDS >= deadline)); then
+    echo "test lock holder did not acquire the SITL lock" >&2
+    exit 1
+  fi
+  sleep 0.01
+done
+run_sitl normal "${fixture_dir}/locked.log" "${fixture_dir}/tmp-locked" & second_pid=$!
 set +e
-wait "${first_pid}"; first_status=$?
 wait "${second_pid}"; second_status=$?
+touch "${lock_release}"
+wait "${lock_holder_pid}"; first_status=$?
 set -e
-if ! { [[ ${first_status} -eq 0 && ${second_status} -ne 0 ]] ||
-       [[ ${first_status} -ne 0 && ${second_status} -eq 0 ]]; }; then
-  cat "${fixture_dir}/one.log" "${fixture_dir}/two.log" >&2
-  echo "concurrent SITL launches were not serialized" >&2
+if [[ ${first_status} -ne 0 || ${second_status} -eq 0 ]]; then
+  cat "${fixture_dir}/locked.log" >&2
+  echo "concurrent SITL launch was not rejected while the fixed-port lock was held" >&2
   exit 1
 fi
+if grep -q '^run ' "${fake_calls}"; then
+  cat "${fake_calls}" >&2
+  echo "rejected concurrent SITL launch reached Docker" >&2
+  exit 1
+fi
+
+run_sitl normal "${fixture_dir}/one.log" "${fixture_dir}/tmp-one"
 mapfile -t sim_names < <(sed -n 's/^run name=\([^ ]*\).*cidfile=.* token=.*/\1/p' "${fake_calls}" | grep -- '-px4-' | sort -u)
 if [[ ${#sim_names[@]} -ne 1 ]]; then
   cat "${fake_calls}" >&2
@@ -234,6 +266,7 @@ assert_only_verified_ids_removed
 # A container created before cidfile publication is recovered by unique
 # name-plus-token verification and is still removed by its immutable ID.
 : >"${fake_calls}"
+wait_for_sitl_lock_release
 if ! run_sitl late-cidfile "${fixture_dir}/late-cidfile.log"; then
   cat "${fixture_dir}/late-cidfile.log" >&2
   echo "late cidfile recovery did not complete safely" >&2
@@ -243,6 +276,7 @@ assert_only_verified_ids_removed
 
 # A timed-out --rm client is still removed by its verified captured ID.
 : >"${fake_calls}"
+wait_for_sitl_lock_release
 if run_sitl persistent-client "${fixture_dir}/persistent-client.log"; then
   cat "${fixture_dir}/persistent-client.log" >&2
   echo "expected persistent fake client to exceed its wallclock cap" >&2
@@ -253,10 +287,16 @@ if [[ $(grep -c '^rm [0-9a-f]\{64\}$' "${fake_calls}") -lt 2 ]]; then
   echo "cleanup did not remove both owned client and simulator containers" >&2
   exit 1
 fi
+if [[ ! -e "${fake_state}/persistent-client-ready" ]]; then
+  cat "${fake_calls}" >&2
+  echo "persistent fake client did not publish its ownership state before timeout" >&2
+  exit 1
+fi
 assert_only_verified_ids_removed
 
 # A legacy-name collision must not trigger cleanup of a foreign container.
 : >"${fake_calls}"
+wait_for_sitl_lock_release
 if run_sitl collision "${fixture_dir}/collision.log"; then
   cat "${fixture_dir}/collision.log" >&2
   echo "expected fake Docker name collision to fail" >&2
@@ -266,6 +306,7 @@ assert_only_verified_ids_removed
 
 # A failed Docker run must not cause name-based cleanup.
 : >"${fake_calls}"
+wait_for_sitl_lock_release
 if run_sitl failed-run "${fixture_dir}/failed-run.log"; then
   cat "${fixture_dir}/failed-run.log" >&2
   echo "expected fake Docker run failure" >&2
@@ -275,6 +316,7 @@ assert_only_verified_ids_removed
 
 # Reusing a client name after its --rm exit must not remove the new owner.
 : >"${fake_calls}"
+wait_for_sitl_lock_release
 run_sitl client-name-reuse "${fixture_dir}/reuse.log"
 if grep -q '^rm .*client' "${fake_calls}"; then
   cat "${fake_calls}" >&2
@@ -285,6 +327,7 @@ assert_only_verified_ids_removed
 
 # A signal after cidfile creation still removes the exact owned simulator ID.
 : >"${fake_calls}"
+wait_for_sitl_lock_release
 set +e
 PATH="${fake_bin}:${PATH}" FAKE_DOCKER_STATE="${fake_state}" FAKE_DOCKER_CALLS="${fake_calls}" \
   FAKE_DOCKER_MODE=normal FAKE_SIGNAL_DURING_LAUNCH=true \
@@ -302,6 +345,7 @@ assert_only_verified_ids_removed
 
 # If ID/token ownership verification is ambiguous, cleanup must fail closed.
 : >"${fake_calls}"
+wait_for_sitl_lock_release
 if run_sitl unverified-owner "${fixture_dir}/unverified.log"; then
   cat "${fixture_dir}/unverified.log" >&2
   cat "${fake_calls}" >&2
@@ -316,6 +360,7 @@ fi
 
 # Docker preflight must be bounded and fail closed when the daemon stalls.
 : >"${fake_calls}"
+wait_for_sitl_lock_release
 start_seconds=${SECONDS}
 if run_sitl preflight-timeout "${fixture_dir}/timeout.log"; then
   cat "${fixture_dir}/timeout.log" >&2

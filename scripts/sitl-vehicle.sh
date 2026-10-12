@@ -38,6 +38,28 @@ sim_started=false
 client_started=false
 pending_signal_status=0
 
+if ! command -v flock >/dev/null 2>&1; then
+  echo "flock is required to serialize fixed-port SITL runs" >&2
+  exit 2
+fi
+
+# Keep the fixed-port lock in a dedicated supervisor process. A shell-owned
+# descriptor is inherited by Docker/logging descendants, which could otherwise
+# keep a completed launcher locked after its cleanup has returned.
+if [[ "${NIDAR_SITL_LOCK_HELD:-}" != true ]]; then
+  if flock -E 75 -n --close "${sitl_lock_file}" \
+      env NIDAR_SITL_LOCK_HELD=true "${BASH_SOURCE[0]}" "$@"; then
+    exit 0
+  else
+    lock_status=$?
+  fi
+  if ((lock_status == 75)); then
+    echo "another Phase 3A vehicle SITL run owns UDP ${listen_port}" >&2
+    exit 2
+  fi
+  exit "${lock_status}"
+fi
+
 cleanup_remaining_seconds() {
   local remaining=$((cleanup_deadline - SECONDS))
   if ((remaining <= 0)); then
@@ -255,16 +277,6 @@ if ! [[ "${docker_timeout_seconds}" =~ ^[1-9][0-9]*$ ]]; then
   echo "NIDAR_SITL_DOCKER_TIMEOUT_SECONDS must be a positive integer" >&2
   exit 2
 fi
-if ! command -v flock >/dev/null 2>&1; then
-  echo "flock is required to serialize fixed-port SITL runs" >&2
-  exit 2
-fi
-exec {sitl_lock_fd}>"${sitl_lock_file}"
-if ! flock -n "${sitl_lock_fd}"; then
-  echo "another Phase 3A vehicle SITL run owns UDP ${listen_port}" >&2
-  exit 2
-fi
-
 python3 - "${listen_port}" <<'PY'
 import socket
 import sys
