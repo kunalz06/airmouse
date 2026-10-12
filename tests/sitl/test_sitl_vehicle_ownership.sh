@@ -226,6 +226,7 @@ assert_only_verified_ids_removed() {
 wait_for_sitl_lock_release
 lock_ready="${fixture_dir}/lock-ready"
 lock_release="${fixture_dir}/lock-release"
+# shellcheck disable=SC2016 # $1 and $2 are expanded by the child bash process.
 flock /tmp/nidar-sitl-vehicle.lock bash -c \
   'touch "$1"; while [[ ! -e "$2" ]]; do sleep 0.01; done' \
   _ "${lock_ready}" "${lock_release}" & lock_holder_pid=$!
