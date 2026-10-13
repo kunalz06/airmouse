@@ -1,0 +1,121 @@
+name: bootstrap-private-ghcr
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_private_package_bootstrap:
+        description: Type BOOTSTRAP_PRIVATE_NIDAR_RUNTIME after the owner verifies the package is absent, establishes private package access manually, and approves this sentinel publication.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: bootstrap-private-ghcr
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: github.repository == 'kunalz06/airmouse' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Confirm owner intent and private source repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NIDAR_CONFIRMATION: ${{ inputs.confirm_private_package_bootstrap }}
+        run: |
+          set -euo pipefail
+          test "$NIDAR_CONFIRMATION" = BOOTSTRAP_PRIVATE_NIDAR_RUNTIME
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -p build/bootstrap
+          jq -n --arg sha "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
+            --arg attempt "$GITHUB_RUN_ATTEMPT" \
+            '{status:"UNVERIFIED",purpose:"private-ghcr-package-bootstrap-sentinel",source_sha:$sha,workflow_run_id:$run,workflow_run_attempt:$attempt,package_verified:false}' \
+            > build/bootstrap/evidence.json
+          auth_dir="$(mktemp -d)"
+          chmod 700 "$auth_dir"
+          trap 'rm -rf "$auth_dir"' EXIT
+          github_api_config="$auth_dir/github-api.conf"
+          printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/vnd.github+json"\nheader = "X-GitHub-Api-Version: 2022-11-28"\n' \
+            "$GITHUB_TOKEN" > "$github_api_config"
+          chmod 600 "$github_api_config"
+          repo_status=$(curl --silent --show-error --config "$github_api_config" \
+            --output "$auth_dir/repository.json" --write-out '%{http_code}' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}")
+          test "$repo_status" = 200
+          jq -e '.full_name == "kunalz06/airmouse" and .private == true' "$auth_dir/repository.json" > /dev/null
+          # A workflow-token 404 may hide an existing private package. Require
+          # positive package metadata before any registry write.
+          package_status=$(curl --silent --show-error --config "$github_api_config" \
+            --output "$auth_dir/package.json" --write-out '%{http_code}' \
+            "https://api.github.com/user/packages/container/nidar-runtime")
+          if ! python3 scripts/verify-runtime-release.py check-package \
+            --status "$package_status" --response-file "$auth_dir/package.json" \
+            --output "$auth_dir/package-verification.json"; then
+            echo 'owner must establish private package access manually before sentinel publication' >&2
+            exit 1
+          fi
+      - name: Publish a unique zero-layer sentinel and verify private package metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SKOPEO_IMAGE: quay.io/skopeo/stable@sha256:97772f3c64fd2fba720b2bafaf37239dc44d8b1c625c8383c64044832efe9ed9
+        run: |
+          set -euo pipefail
+          auth_dir="$(mktemp -d)"
+          chmod 700 "$auth_dir"
+          export DOCKER_CONFIG="$auth_dir/docker"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          trap 'rm -rf "$auth_dir"' EXIT
+          github_api_config="$auth_dir/github-api.conf"
+          printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/vnd.github+json"\nheader = "X-GitHub-Api-Version: 2022-11-28"\n' \
+            "$GITHUB_TOKEN" > "$github_api_config"
+          chmod 600 "$github_api_config"
+          image="ghcr.io/kunalz06/nidar-runtime:bootstrap-sentinel-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA}"
+          docker build --platform linux/amd64 --no-cache \
+            --build-arg NIDAR_SOURCE_SHA="$GITHUB_SHA" -t "$image" - <<'DOCKERFILE'
+          FROM scratch
+          ARG NIDAR_SOURCE_SHA
+          LABEL org.opencontainers.image.source=https://github.com/kunalz06/airmouse
+          LABEL org.opencontainers.image.revision=$NIDAR_SOURCE_SHA
+          LABEL io.nidar.artifact.kind=bootstrap-sentinel
+          DOCKERFILE
+          printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$image"
+          package_status=$(curl --silent --show-error --config "$github_api_config" \
+            --output "$auth_dir/package.json" --write-out '%{http_code}' \
+            "https://api.github.com/user/packages/container/nidar-runtime")
+          python3 scripts/verify-runtime-release.py check-package \
+            --status "$package_status" --response-file "$auth_dir/package.json" \
+            --output "$auth_dir/package-verification.json"
+          test "$(jq -r .visibility "$auth_dir/package-verification.json")" = private
+          printf '%s' "$GITHUB_TOKEN" | docker run --rm -i -v "$auth_dir:/auth" "$SKOPEO_IMAGE" \
+            login --authfile /auth/auth.json ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker run --rm -v "$auth_dir:/auth:ro" "$SKOPEO_IMAGE" \
+            inspect --authfile /auth/auth.json "docker://${image}" > "$auth_dir/tagged.json"
+          digest=$(jq -r .Digest "$auth_dir/tagged.json")
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo 'invalid sentinel digest' >&2; exit 1; }
+          docker run --rm -v "$auth_dir:/auth:ro" "$SKOPEO_IMAGE" \
+            inspect --authfile /auth/auth.json "docker://ghcr.io/kunalz06/nidar-runtime@${digest}" \
+            > "$auth_dir/by-digest.json"
+          python3 scripts/verify-runtime-release.py verify-bootstrap-remote \
+            --tagged-file "$auth_dir/tagged.json" --digest-file "$auth_dir/by-digest.json" \
+            --source-sha "$GITHUB_SHA" --sentinel-tag "$image" \
+            --output "$auth_dir/verified-sentinel.json"
+          jq -n --arg sha "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
+            --arg attempt "$GITHUB_RUN_ATTEMPT" --slurpfile verified "$auth_dir/verified-sentinel.json" \
+            '{status:"BOOTSTRAP_PACKAGE_READY",purpose:"private-ghcr-package-bootstrap-sentinel",source_sha:$sha,workflow_run_id:$run,workflow_run_attempt:$attempt,sentinel_tag:$verified[0].sentinel_tag,sentinel_reference:$verified[0].sentinel_reference,manifest_digest:$verified[0].manifest_digest,source_and_kind_labels_verified:$verified[0].labels_verified,package_visibility:"private",package_owner:"kunalz06",linked_repository:"kunalz06/airmouse",workflow_registry_access_proven:true,package_verified:true,runtime_release_verified:false}' \
+            > build/bootstrap/evidence.json
+      - name: Upload sanitized bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: phase-4b-ghcr-bootstrap-evidence
+          path: build/bootstrap/evidence.json
+          if-no-files-found: warn
+          retention-days: 90
