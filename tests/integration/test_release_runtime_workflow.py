@@ -22,6 +22,20 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def setUpClass(cls):
         cls.text = WORKFLOW.read_text()
 
+    def test_arm64_pr_build_uses_exact_checked_out_head_as_provenance(self):
+        workflow = yaml.load(BUILD_WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+        steps = workflow["jobs"]["arm64-runtime"]["steps"]
+        by_name = {step.get("name"): step for step in steps}
+        source_expr = "${{ github.event.pull_request.head.sha || github.sha }}"
+        checkout = next(step for step in steps if "uses" in step and "checkout" in step["uses"])
+        self.assertEqual(checkout["with"]["ref"], source_expr)
+        self.assertIn('git rev-parse HEAD', by_name["Capture unique CI build identity once"]["run"])
+        for name in ("Build, load, and export the same linux/arm64 runtime once",
+                     "Record immutable manifest from the single build output"):
+            with self.subTest(name=name):
+                script = by_name[name]["run"]
+                self.assertIn("GITHUB_SHA='" + source_expr + "'", script)
+
     def test_manual_main_only_and_least_privilege_permissions(self):
         self.assertIn("workflow_dispatch:", self.text)
         self.assertNotIn("pull_request:", self.text)

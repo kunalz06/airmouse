@@ -119,7 +119,8 @@ jobs:
           docker buildx inspect nidar-builder | grep -q linux/arm64
       - name: Build, load, and export the same linux/arm64 runtime once
         run: |
-          scripts/build-runtime-arm64.sh --load \
+          GITHUB_SHA='${{ github.event.pull_request.head.sha || github.sha }}' \
+            scripts/build-runtime-arm64.sh --load \
             --output build/release/nidar-runtime-arm64.oci.tar \
             --image-ref nidar-runtime:phase-4a-ci
       - name: Verify architecture, libraries, content and execution
@@ -134,7 +135,8 @@ jobs:
             --output-dir build/release/phase-4a-apt-closure
       - name: Record immutable manifest from the single build output
         run: |
-          python3 scripts/record-runtime-manifest.py \
+          GITHUB_SHA='${{ github.event.pull_request.head.sha || github.sha }}' \
+            python3 scripts/record-runtime-manifest.py \
             --oci build/release/nidar-runtime-arm64.oci.tar \
             --image-ref nidar-runtime:phase-4a-ci \
             --apt-summary build/release/phase-4a-apt-closure/summary.json \
