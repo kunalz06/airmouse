@@ -1,14 +1,14 @@
 # Progress Ledger
 
-- Current phase: **Phase 4A — ARM64 Production Runtime (in progress; local implementation and verification completed, final-correction hosted CI and independent review pending)**. Phase 3A remains complete on implementation commit `6a4c1107af32db1298b9d4b3529825221020f3d6`.
-- Current task: Complete the Phase 4A closeout gates in `docs/superpowers/plans/2026-10-06-phase-4a-arm64-runtime.md`; preserve all Phase 3A gates and the telemetry-only command boundary.
-- Completed task IDs: P0-01 through P0-06; Phase 1 toolchain; Phase 2 PX4/Gazebo SITL; Phase 3A MAVSDK vehicle telemetry. Phase 4A Tasks 1–3 implemented, with local ARM64 artifact/execution tests passing. Tasks 4–7 implemented locally; Tasks 8–9 are gated on final-commit CI and independent review.
+- Current phase: **Phase 4A — ARM64 Production Runtime (complete)**. Phase 3A remains complete on implementation commit `6a4c1107af32db1298b9d4b3529825221020f3d6`.
+- Current task: Preserve the Phase 4A telemetry-only runtime and its AMD64, SITL and ARM64 verification gates. Phase 4B is separately authorized work.
+- Completed task IDs: P0-01 through P0-06; Phase 1 toolchain; Phase 2 PX4/Gazebo SITL; Phase 3A MAVSDK vehicle telemetry; Phase 4A Tasks 1–9.
 - Phase 4A local evidence: `docs/test-results/phase-4a-*`; `build/release/phase-4a-amd64-tests.log`, `build/release/phase-4a-sitl-tests.log`, `build/release/phase-4a-disk-report.txt` (local/ignored logs). The OCI manifest checked in as a snapshot is associated with pre-closeout build `ee45a6f`. The new CI job must publish per-revision OCI and APT-stage package inventories with verified build/run provenance.
 - Phase 3A hosted evidence: GitHub Actions build-test run #76 (workflow run ID `37195954497`) passed on implementation commit `6a4c1107af32db1298b9d4b3529825221020f3d6`. Do not represent this as Phase 4A hosted evidence.
 - Architectural rulings: PX4 owns stabilization, EKF and failsafes. MAVSDK is only the vehicle adapter. Phase 4A uses CompanionComputer identity, forwarding disabled, no enabled active commands, non-root ARM64 runtime and no UART/TELEM assumptions.
-- Hosted candidate evidence: GitHub Actions runs `37888297626` and `37888278631` passed amd64, SITL and ARM64 runtime jobs on `ac0823c`; they do not cover the corrective commit in progress.
-- Open findings: independent review found command-capable MAVSDK plugins in the candidate runtime; the telemetry-only library correction and artifact-level symbol check need fresh build/CI/re-review. Verified immutable Ubuntu package closure and distinct wall-clock build/run provenance remain Important blockers. No Raspberry Pi hardware work authorized yet.
+- Final hosted evidence: GitHub Actions run #119 (workflow run ID `38207165859`) passed AMD64, full PX4 X500 SITL and ARM64 runtime/provenance on exact PR head `4328e4f4798d617b99d5b95f50704e3fbab0f69b`. PR #2 merged to `main` as `741cda8c5ab40460c1df7beea47e7c57f11c9e89`.
+- Review findings: the SITL container-ownership race and bounded-preflight findings were corrected before the final run. The independent Phase 4A review recorded no unresolved P0/P1 findings. No Raspberry Pi hardware work is authorized.
 - Phase 3B active-command code is present on separate unmerged `codex/phase-3b` worktree; it is not part of or approved by Phase 4A.
-- Next task: obtain green final-commit hosted Phase 4A CI evidence and independent review; close Phase 4A only when both pass. Phase 4B Pi runtime startup is a **separately authorized** follow-on; Phase 4C physical read-only serial telemetry comes after it.
+- Next task: Phase 4B Pi runtime startup is a **separately authorized** follow-on; Phase 4C physical read-only serial telemetry comes after it.
 
-- Review correction: workflow #91 passed all 3 jobs on `6d8ce8f`; final Important APT closure and CI build timestamp/run identity corrections are implemented on this branch, awaiting new CI and independent approval. No Phase 4B authorization.
+- Closeout: runtime packaging, OCI provenance and telemetry-only boundary are verified by the final hosted run. No Phase 4B authorization.

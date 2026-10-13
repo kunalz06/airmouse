@@ -1,8 +1,8 @@
 # Phase 4A update — ARM64 telemetry-only runtime
 
-Phase 4A work is implemented in `phase-4a-arm64-runtime` and undergoing closeout. **Phase 4A is not yet authorized as complete** until hosted CI on the exact final commit and an independent review meet the approved plan.
+Phase 4A is complete and merged to `main` as `741cda8c5ab40460c1df7beea47e7c57f11c9e89`. The final exact-head GitHub Actions run #119 (workflow run ID `38207165859`) passed AMD64, full PX4 X500 SITL and ARM64 runtime/provenance validation on `4328e4f4798d617b99d5b95f50704e3fbab0f69b`.
 
-## Implemented scope (final CI and review pending)
+## Implemented scope
 
 - Locked MAVSDK v3.17.2 ARM64 source build to upstream commit `9e3ca17faa84aa868caea10a3bbdab7e53810ced`.
 - Produced a minimal non-root Ubuntu 24.04 linux/arm64 `nidar-flight` Docker image with MAVSDK shared library.
@@ -28,13 +28,13 @@ build 170 packages, and runtime 94 packages. An authorized host completed the
 ARM64 APT-only bootstrap that generated those inventories. A separate locked
 APT-only replay reproduced all three inventories byte-for-byte with matching
 package counts and SHA-256 checksums. The expanded local suite passed 22 tests.
-Full image compilation, final hosted CI and follow-up review remain pending.
+The final hosted run completed successfully. Its ARM64 job verified architecture, libraries, bounded no-PX4 execution, package closure, OCI manifest provenance and disk hygiene; its SITL job ran smoke, headless and both vehicle-launch paths.
 
 See `docs/test-results/phase-4a-*`. The initial image was 173,576,024 bytes uncompressed, below the explicit 220,000,000-byte policy budget. Both runtime artifact/execution checks and policy check passed locally under QEMU. The manifest snapshot in this repository is associated with **pre-closeout local build** commit `ee45a6f`; it is **not** to be presented as the immutable digest of a later source revision.
 
 The final-commit CI job creates its own immutable OCI manifest evidence as `phase-4a-runtime-manifest.txt`, published as a small Actions artifact and job summary. Do not substitute the local snapshot for final CI output.
 
-## Mandatory remaining gates
+## Completed closeout gates
 
 - Review the checked-in initial ARM64 three-stage closure and retain evidence
   of the successful authorized-host locked APT-only replay. The Codex sandbox
@@ -62,15 +62,13 @@ The final-commit CI job creates its own immutable OCI manifest evidence as `phas
   lock; changing one is an explicit reviewed operation, never an automatic CI
   action.
 
-- GitHub Actions candidate runs `37888297626` and `37888278631` passed amd64, ASan/UBSan, X500 SITL and ARM64 runtime jobs for `ac0823c`; they are not evidence for a later corrective commit.
-- Verify all amd64, ASan/UBSan and X500 SITL jobs green on the exact final branch commit in GitHub Actions.
-- Verify the new ARM64 CI job green and retain its manifest, size and disk evidence.
-- Obtain an independent review with no unresolved Critical or Important findings; the author/assistant's own inspection is not an independent signoff.
-- Close phase ledgers as **Complete** only after the above evidence is recorded. Until then the explicit status is **in progress / verification and review pending**.
+- The corrected final run #119 passed all AMD64, SITL and ARM64 runtime jobs on `4328e4f`.
+- The final ARM64 artifact preserved the non-root `65532:65532` runtime identity, pinned MAVSDK source and generated OCI provenance record.
+- The independent Phase 4A review had no unresolved P0/P1 findings; the ownership and bounded-preflight corrections were included in the final run.
 
 Phase 3B active vehicle commands remain separate and unmerged. No serial, Raspberry Pi, CUAV X7+, propulsion or flight hardware integration was performed.
 
-## Final Important finding corrections (awaiting new hosted CI and independent signoff)
+## Final Important finding corrections
 
 The prior evidence-only APT inventory has been superseded by a signed, dated
 snapshot and a committed exact closure lock. `config/versions.lock` is the
@@ -78,10 +76,10 @@ authoritative snapshot/trust/closure policy, and normal build CLI has no
 bootstrap switch. The build does not use a mutable Ubuntu mirror or weaken
 TLS/Release signature verification.
 
-CI now captures one build-initiation UTC timestamp, derives `SOURCE_DATE_EPOCH`
+CI captures one build-initiation UTC timestamp, derives `SOURCE_DATE_EPOCH`
 from it, and creates the loaded image and OCI archive in one build. Manifest
 validation requires the label, OCI config creation time, and Docker image
 creation time to agree. New stage inventories and provenance must pass full,
 fresh hosted CI before reviewer reconsideration.
 
-Do not update this document to Complete or merge PR #2 without independent final-revision approval.
+Phase 4B/C, Raspberry Pi deployment, powered hardware connection and active flight commands remain outside this completed Phase 4A scope.
