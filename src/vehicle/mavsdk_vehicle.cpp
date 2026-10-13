@@ -142,9 +142,6 @@ public:
       if (system && is_connected_handle) {
         system->unsubscribe_is_connected(*is_connected_handle);
       }
-      if (sdk && connection_handle) {
-        sdk->remove_connection(*connection_handle);
-      }
 
       armed_handle.reset();
       flight_mode_handle.reset();
@@ -153,6 +150,12 @@ public:
       connection_handle.reset();
       telemetry.reset();
       system.reset();
+
+      // Each bundle exclusively owns its SDK instance and never reuses its
+      // connection. Let that instance's destructor perform its own connection
+      // cleanup after it has stopped MAVSDK worker threads. Explicitly tearing
+      // down the connection here can make MAVSDK 3.17.2 join its UDP reader
+      // while the SDK implementation lock is held, causing a lock inversion.
       sdk.reset();
     }
 
@@ -397,15 +400,14 @@ public:
   }
 
   [[nodiscard]] std::string version() const {
-    std::shared_ptr<mavsdk::Mavsdk> sdk;
     {
       std::lock_guard lifecycle_lock(lifecycle_mutex_);
       if (bundle_) {
-        sdk = bundle_->sdk;
+        // Do not copy the SDK ownership out of the lifecycle critical
+        // section. A copied shared_ptr could keep the UDP endpoint and MAVSDK
+        // workers alive after disconnect() has completed.
+        return bundle_->sdk->version();
       }
-    }
-    if (sdk) {
-      return sdk->version();
     }
 
     auto configuration =

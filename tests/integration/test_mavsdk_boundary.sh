@@ -23,3 +23,11 @@ if grep -R -nE   'mavsdk/(action|offboard|mission|mission_raw|param)|mavsdk::(Ac
   echo "active-command MAVSDK plugin is forbidden in Phase 3A" >&2
   exit 1
 fi
+
+adapter="src/vehicle/mavsdk_vehicle.cpp"
+if grep -nE -- '->[[:space:]]*remove_connection[[:space:]]*\(' "${adapter}"; then
+  echo "connection teardown must be owned by the dedicated Mavsdk destructor" >&2
+  exit 1
+fi
+grep -Fq "Each bundle exclusively owns its SDK instance" "${adapter}"
+grep -Fq "sdk.reset();" "${adapter}"

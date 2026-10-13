@@ -1,0 +1,8 @@
+Phase 4A local disk report — captured 2026-10-09
+
+Command: scripts/docker-disk-report.sh
+Root filesystem: 468G capacity, 60G used, 385G available (14% used)
+Build directory (worktree): 71M
+Buildx cache reported: 6.424GB total/reclaimable (under project 10GB soft limit)
+No image, build cache, volume, PX4/Gazebo layer or flight evidence was deleted.
+Full terminal report: build/release/phase-4a-disk-report.txt (local ignored file).

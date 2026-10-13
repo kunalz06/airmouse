@@ -1,0 +1,10 @@
+Phase 4A ARM64 artifact local build evidence
+Captured: 2026-10-09
+Source revision: ee45a6fc065eafb350372bb6692ce9d49e71d636 (pre-closeout)
+MAVSDK version: v3.17.2
+MAVSDK source commit: 9e3ca17faa84aa868caea10a3bbdab7e53810ced
+Target: linux/arm64 (Ubuntu 24.04)
+Build command: scripts/build-runtime-arm64.sh --output build/release/nidar-runtime-arm64.oci.tar
+Result: exit 0; generated OCI archive (37,880,832 bytes)
+Loaded image: nidar-runtime:phase-4a-local (existing local Phase 4A build)
+Note: This is local pre-closeout evidence, not a claim of final-commit CI success.

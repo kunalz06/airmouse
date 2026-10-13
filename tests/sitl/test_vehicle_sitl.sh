@@ -7,9 +7,14 @@ mode="${1:---normal}"
 if [[ "${mode}" == "--normal" ]]; then
   exec "${project_root}/scripts/sitl-vehicle.sh"
 fi
-
+if [[ "${mode}" == "--fake-docker-cleanup" ||
+      "${mode}" == "--signal-during-launch" ]]; then
+  # Compatibility entry points retained for existing callers. The consolidated
+  # suite now covers ambiguous ownership and launch-signal cleanup as well.
+  exec "${project_root}/tests/sitl/test_sitl_vehicle_ownership.sh"
+fi
 if [[ "${mode}" != "--occupied-port" ]]; then
-  echo "usage: $0 [--normal|--occupied-port]" >&2
+  echo "usage: $0 [--normal|--occupied-port|--fake-docker-cleanup|--signal-during-launch]" >&2
   exit 2
 fi
 
@@ -54,9 +59,7 @@ set +e
 output="$(NIDAR_SITL_TIMEOUT_SECONDS=2 "${project_root}/scripts/sitl-vehicle.sh" 2>&1)"
 status=$?
 set -e
-
-if [[ ${status} -eq 0 ]] ||
-   [[ "${output}" != *"required UDP port is unavailable"* ]]; then
-  printf 'expected occupied-port rejection; status=%s output=%s\n'     "${status}" "${output}" >&2
+if [[ ${status} -eq 0 ]] || [[ "${output}" != *"required UDP port is unavailable"* ]]; then
+  printf 'expected occupied-port rejection; status=%s output=%s\n' "${status}" "${output}" >&2
   exit 1
 fi
