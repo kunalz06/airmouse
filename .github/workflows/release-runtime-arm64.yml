@@ -1,0 +1,479 @@
+name: release-runtime-arm64
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  packages: write
+
+concurrency:
+  group: release-runtime-arm64-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+      - uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3
+        with:
+          driver: docker-container
+          install: true
+      - name: Preflight exact main identity, CI, privacy, and immutable tag
+        env:
+          SKOPEO_IMAGE: quay.io/skopeo/stable@sha256:97772f3c64fd2fba720b2bafaf37239dc44d8b1c625c8383c64044832efe9ed9
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/release
+          printf '%s\n' preflight > build/release/phase-4b-stage
+          test -z "$(git status --porcelain)"
+          source_sha=$(git rev-parse HEAD)
+          test "$source_sha" = "$GITHUB_SHA"
+          test "$GITHUB_REF" = "refs/heads/main"
+          remote_main=$(git ls-remote origin refs/heads/main | awk '{print $1}')
+          test "$remote_main" = "$source_sha"
+          test -n "$GITHUB_RUN_ID" && test -n "$GITHUB_RUN_ATTEMPT"
+          mkdir -p build/release/phase-4b-ci-pages
+          umask 077
+          github_api_config="$(mktemp)"
+          auth_dir="$(mktemp -d)"
+          trap 'rm -f "$github_api_config" "${prior_headers:-}" "${signed_url_config:-}"; rm -rf "$auth_dir"' EXIT
+          printf 'header = "Authorization: Bearer %s"\nheader = "X-GitHub-Api-Version: 2022-11-28"\n' "$GITHUB_TOKEN" > "$github_api_config"
+          release_timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          source_timestamp="$(date -u -d "$(git show -s --format=%cI HEAD)" '+%Y-%m-%dT%H:%M:%SZ')"
+          sha256sum config/versions.lock | awk '{print "sha256:" $1}' > build/release/phase-4b-lock.digest
+          jq -n --arg sha "$source_sha" --arg timestamp "$release_timestamp" \
+            --argjson run_id "$GITHUB_RUN_ID" --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg source_timestamp "$source_timestamp" \
+            '{source_git_commit:$sha,release_timestamp:$timestamp,source_timestamp:$source_timestamp,workflow_run_id:$run_id,workflow_run_attempt:$run_attempt,platform:{os:"linux",architecture:"arm64"}}' \
+            > build/release/phase-4b-release-context.json
+          url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/build-test.yml/runs?event=push&branch=main&head_sha=${source_sha}&status=completed&per_page=100"
+          page=1
+          while test -n "$url"; do
+            case "$url" in
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/"*) ;;
+              *) echo "unexpected Actions API pagination host/path" >&2; exit 1 ;;
+            esac
+            headers="build/release/phase-4b-ci-pages/${page}.headers"
+            body="build/release/phase-4b-ci-pages/${page}.json"
+            curl --fail --silent --show-error --config "$github_api_config" \
+              --dump-header "$headers" --output "$body" "$url"
+            url=$(tr -d '\r' < "$headers" | sed -n 's/^link:.*<\([^>]*\)>; rel="next".*/\1/pI')
+            page=$((page + 1))
+            test "$page" -le 20 || { echo 'CI evidence pagination exceeded limit' >&2; exit 1; }
+          done
+          jq -s . build/release/phase-4b-ci-pages/*.json > build/release/phase-4b-ci-runs.json
+          mkdir -p build/release/phase-4b-job-pages
+          mapfile -t run_ids < <(jq -r --arg sha "$source_sha" '
+            .[].workflow_runs[] | select(.name == "build-test" and .head_sha == $sha and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion == "success") | .id
+          ' build/release/phase-4b-ci-runs.json)
+          test "${#run_ids[@]}" -ge 1 || { echo 'no successful exact-SHA main build-test run' >&2; exit 1; }
+          for run_id in "${run_ids[@]}"; do
+            jobs_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100"
+            job_page=1
+            job_dir="build/release/phase-4b-job-pages/${run_id}"
+            mkdir -p "$job_dir"
+            while test -n "$jobs_url"; do
+              case "$jobs_url" in
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/"*) ;;
+                *) echo "unexpected Actions jobs API pagination host/path" >&2; exit 1 ;;
+              esac
+              headers="$job_dir/${job_page}.headers"
+              body="$job_dir/${job_page}.json"
+              curl --fail --silent --show-error --config "$github_api_config" \
+                --dump-header "$headers" --output "$body" "$jobs_url"
+              jobs_url=$(tr -d '\r' < "$headers" | sed -n 's/^link:.*<\([^>]*\)>; rel="next".*/\1/pI')
+              job_page=$((job_page + 1))
+              test "$job_page" -le 20 || { echo 'workflow-job pagination exceeded limit' >&2; exit 1; }
+            done
+            jq -s '{jobs: [.[].jobs[]]}' "$job_dir"/*.json | jq --arg id "$run_id" '{($id): .}' > "$job_dir/jobs.json"
+          done
+          jq -s 'add' build/release/phase-4b-job-pages/*/jobs.json > build/release/phase-4b-jobs.json
+          python3 scripts/verify-runtime-release.py verify-ci \
+            --runs-file build/release/phase-4b-ci-runs.json \
+            --jobs-file build/release/phase-4b-jobs.json \
+            --expected-sha "$source_sha" --current-main-sha "$remote_main" \
+            --output build/release/phase-4b-ci-evidence.json
+          # /user/packages is private-package-aware; /users/{owner}/packages only
+          # enumerates public packages. A 404 is ambiguous and never bootstrap approval.
+          package_status=$(curl --silent --show-error --config "$github_api_config" \
+            --output "$auth_dir/package.json" --write-out '%{http_code}' \
+            "https://api.github.com/user/packages/container/nidar-runtime")
+          python3 scripts/verify-runtime-release.py check-package \
+            --status "$package_status" --response-file "$auth_dir/package.json" \
+            --output build/release/phase-4b-package-verification.json
+          package_visibility=$(jq -r .visibility build/release/phase-4b-package-verification.json)
+          printf '%s\n' "$package_visibility" > build/release/phase-4b-registry-visibility
+          touch build/release/phase-4b-check-private_visibility
+          # A tag can be absent only when the registry explicitly says so; all
+          # authentication/network errors block instead of being mistaken for absence.
+          tag="ghcr.io/kunalz06/nidar-runtime:sha-${source_sha}"
+          printf '%s' "$GITHUB_TOKEN" | docker run --rm -i -v "$auth_dir:/auth" "$SKOPEO_IMAGE" \
+            login --authfile /auth/auth.json ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          if docker run --rm -v "$auth_dir:/auth:ro" "$SKOPEO_IMAGE" inspect --authfile /auth/auth.json "docker://${tag}" >build/release/phase-4b-existing-tag.json 2>build/release/phase-4b-existing-tag.err; then
+            docker run --rm -v "$auth_dir:/auth:ro" "$SKOPEO_IMAGE" inspect --authfile /auth/auth.json --raw "docker://${tag}" > build/release/phase-4b-existing-tag-raw.json
+            jq -n --slurpfile raw build/release/phase-4b-existing-tag-raw.json --slurpfile inspect build/release/phase-4b-existing-tag.json \
+              '{manifest_digest:$inspect[0].Digest,config_digest:$raw[0].config.digest,layers:[$raw[0].layers[].digest],media_type:$raw[0].mediaType,platform:{os:$inspect[0].Os,architecture:$inspect[0].Architecture},labels:$inspect[0].Labels}' \
+              > build/release/phase-4b-existing-remote.json
+            curl --fail --silent --show-error --config "$github_api_config" \
+              --output build/release/phase-4b-existing-release-runs.json \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/release-runtime-arm64.yml/runs?event=workflow_dispatch&branch=main&head_sha=${source_sha}&status=completed&per_page=100"
+            test "$(jq -er .total_count build/release/phase-4b-existing-release-runs.json)" -le 100 || {
+              echo 'prior release run list requires pagination; refusing ambiguous retry' >&2; exit 1; }
+            jq .workflow_runs build/release/phase-4b-existing-release-runs.json > build/release/phase-4b-existing-release-evidence.json
+            mapfile -t prior_run_ids < <(jq -r --arg sha "$source_sha" '.[] | select(.name == "release-runtime-arm64" and .head_sha == $sha and .head_branch == "main" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .id' build/release/phase-4b-existing-release-evidence.json)
+            test "${#prior_run_ids[@]}" -ge 1 || { echo 'existing tag lacks a successful release run' >&2; exit 1; }
+            verified_prior_record=false
+            for prior_run_id in "${prior_run_ids[@]}"; do
+              prior_run_attempt=$(jq -r --argjson id "$prior_run_id" '.[] | select(.id == $id) | .run_attempt' build/release/phase-4b-existing-release-evidence.json)
+              [[ "$prior_run_attempt" =~ ^[1-9][0-9]*$ ]] || continue
+              curl --fail --silent --show-error --config "$github_api_config" \
+                --output build/release/phase-4b-prior-attempt.json \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${prior_run_id}/attempts/${prior_run_attempt}"
+              curl --fail --silent --show-error --config "$github_api_config" \
+                --output build/release/phase-4b-prior-artifacts.json \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${prior_run_id}/artifacts?per_page=100"
+              test "$(jq -er .total_count build/release/phase-4b-prior-artifacts.json)" -le 100 || {
+                echo 'prior artifact list requires pagination; refusing ambiguous retry' >&2; exit 1; }
+              jq '[.artifacts[] | select(.name == "phase-4b-runtime-release-evidence" and .expired == false)] |
+                if length == 1 then .[0] else empty end' build/release/phase-4b-prior-artifacts.json \
+                > build/release/phase-4b-prior-artifact.json
+              test -s build/release/phase-4b-prior-artifact.json || continue
+              prior_artifact_url=$(jq -er .archive_download_url build/release/phase-4b-prior-artifact.json)
+              case "$prior_artifact_url" in
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/"*) ;;
+                *) echo 'untrusted artifact API download endpoint' >&2; exit 1 ;;
+              esac
+              prior_headers="$(mktemp)"
+              prior_status=$(curl --silent --show-error --config "$github_api_config" \
+                --max-redirs 0 --dump-header "$prior_headers" --output /dev/null \
+                --write-out '%{http_code}' "$prior_artifact_url")
+              if test "$prior_status" != 302; then rm -f "$prior_headers"; continue; fi
+              signed_url_config="$(mktemp)"
+              # Read Location from private headers and place the signed URL in
+              # a 0600 curl config. Neither a process argument nor a log will
+              # expose the short-lived archive URL or its bearer-like query.
+              python3 - "$prior_headers" "$signed_url_config" <<'CHECK_SIGNED_LOCATION'
+          import sys
+          from pathlib import Path
+          from urllib.parse import urlparse
+          headers = Path(sys.argv[1]).read_text().splitlines()
+          locations = [line.split(":", 1)[1].strip() for line in headers
+                       if line.lower().startswith("location:")]
+          if len(locations) != 1:
+              raise SystemExit("expected exactly one artifact redirect")
+          url = locations[0]
+          loc = urlparse(url)
+          host = (loc.hostname or "").lower()
+          if loc.scheme != "https" or loc.username or loc.password or not (
+              host.endswith(".blob.core.windows.net") or
+              host == "objects.githubusercontent.com" or
+              host.endswith(".actions.githubusercontent.com")
+          ) or any(c in url for c in ('"', "\\", "\r", "\n")):
+              raise SystemExit("untrusted signed artifact download endpoint")
+          Path(sys.argv[2]).write_text('url = "' + url + '"\n')
+          CHECK_SIGNED_LOCATION
+              rm -f "$prior_headers"
+              curl --fail --silent --config "$signed_url_config" \
+                --output build/release/phase-4b-prior-release-evidence.zip
+              rm -f "$signed_url_config"
+              actual_artifact_digest=$(sha256sum build/release/phase-4b-prior-release-evidence.zip | awk '{print "sha256:" $1}')
+              test "$actual_artifact_digest" = "$(jq -r .digest build/release/phase-4b-prior-artifact.json)" || {
+                echo 'retained artifact ZIP digest differs from GitHub metadata' >&2; exit 1; }
+              unzip -p build/release/phase-4b-prior-release-evidence.zip phase-4b-release-record.json \
+                > build/release/phase-4b-prior-release-record.json
+              if python3 scripts/verify-runtime-release.py verify-existing-release \
+                --remote-file build/release/phase-4b-existing-remote.json \
+                --runs-file build/release/phase-4b-existing-release-evidence.json --source-sha "$source_sha" \
+                --prior-record-file build/release/phase-4b-prior-release-record.json \
+                --prior-artifact-file build/release/phase-4b-prior-artifact.json \
+                --attempt-file build/release/phase-4b-prior-attempt.json \
+                --output build/release/phase-4b-idempotent-verification.json; then
+                verified_prior_record=true
+                break
+              fi
+            done
+            test "$verified_prior_record" = true || { echo 'existing tag lacks retained, attempt-bound VERIFIED release evidence' >&2; exit 1; }
+            existing_digest=$(jq -r .registry_manifest_digest build/release/phase-4b-idempotent-verification.json)
+            printf 'NIDAR_IDEMPOTENT=true\nNIDAR_REGISTRY_REFERENCE=ghcr.io/kunalz06/nidar-runtime@%s\n' "$existing_digest" >> "$GITHUB_ENV"
+            echo 'idempotent verified release; skipping rebuild and publication'
+            exit 0
+          fi
+          python3 scripts/verify-runtime-release.py check-tag --exists false \
+            --diagnostic-file build/release/phase-4b-existing-tag.err \
+            --package-visibility "$package_visibility" \
+            --output build/release/phase-4b-existing-tag-verification.json
+      - name: Register pinned ARM64 QEMU handler
+        run: |
+          docker run --rm --privileged \
+            tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 \
+            --install arm64
+          test -r /proc/sys/fs/binfmt_misc/qemu-aarch64
+      - name: Build one locked ARM64 release candidate
+        if: env.NIDAR_IDEMPOTENT != 'true'
+        run: |
+          set -euo pipefail
+          docker buildx create --name nidar-builder --driver docker-container --use || docker buildx use nidar-builder
+          docker buildx inspect nidar-builder --bootstrap
+          NIDAR_BUILD_TIMESTAMP="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          export NIDAR_BUILD_TIMESTAMP
+          NIDAR_PR_HEAD_SHA="$GITHUB_SHA"
+          export NIDAR_PR_HEAD_SHA
+          printf 'NIDAR_BUILD_TIMESTAMP=%s\n' "$NIDAR_BUILD_TIMESTAMP" >> "$GITHUB_ENV"
+          printf 'NIDAR_PR_HEAD_SHA=%s\n' "$NIDAR_PR_HEAD_SHA" >> "$GITHUB_ENV"
+          printf '%s\n' "$NIDAR_BUILD_TIMESTAMP" > build/release/phase-4b-build.timestamp
+          scripts/build-runtime-arm64.sh --load \
+            --image-ref nidar-runtime:phase-4b-release \
+            --output build/release/nidar-runtime-arm64.oci.tar
+      - name: Verify the single candidate before publication
+        if: env.NIDAR_IDEMPOTENT != 'true'
+        run: |
+          set -euo pipefail
+          printf '%s\n' mavsdk-telemetry-patch > build/release/phase-4b-stage
+          tests/integration/test_mavsdk_telemetry_patch.sh
+          touch build/release/phase-4b-check-telemetry_patch
+          printf '%s\n' mavsdk-command-boundary > build/release/phase-4b-stage
+          tests/integration/test_mavsdk_boundary.sh
+          touch build/release/phase-4b-check-command_boundary
+          printf '%s\n' candidate-artifact-test > build/release/phase-4b-stage
+          tests/integration/test_runtime_arm64_artifact.sh nidar-runtime:phase-4b-release
+          touch build/release/phase-4b-check-arm64_artifact
+          printf '%s\n' candidate-execution-test > build/release/phase-4b-stage
+          tests/integration/test_runtime_arm64_execution.sh nidar-runtime:phase-4b-release
+          touch build/release/phase-4b-check-bounded_execution
+          printf '%s\n' candidate-image-policy > build/release/phase-4b-stage
+          tests/integration/test_runtime_image_policy.sh nidar-runtime:phase-4b-release
+          touch build/release/phase-4b-check-image_policy
+          printf '%s\n' apt-closure > build/release/phase-4b-stage
+          python3 scripts/verify-runtime-apt-closure.py \
+            --image-ref nidar-runtime:phase-4b-release \
+            --output-dir build/release/phase-4b-apt-closure
+          touch build/release/phase-4b-apt-closure-passed
+          printf '%s\n' runtime-manifest > build/release/phase-4b-stage
+          python3 scripts/record-runtime-manifest.py \
+            --oci build/release/nidar-runtime-arm64.oci.tar \
+            --image-ref nidar-runtime:phase-4b-release \
+            --apt-summary build/release/phase-4b-apt-closure/summary.json \
+            --output build/release/phase-4b-runtime-manifest.txt
+          touch build/release/phase-4b-runtime-manifest-passed
+          sha256sum build/release/nidar-runtime-arm64.oci.tar | awk '{print "sha256:" $1}' > build/release/phase-4b-archive.digest
+          printf '%s\n' candidate-verification > build/release/phase-4b-stage
+          touch build/release/phase-4b-candidate-tests-passed
+      - name: Publish verified OCI archive and resolve remote identity
+        if: env.NIDAR_IDEMPOTENT != 'true'
+        env:
+          SKOPEO_IMAGE: quay.io/skopeo/stable@sha256:97772f3c64fd2fba720b2bafaf37239dc44d8b1c625c8383c64044832efe9ed9
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source_sha=$(git rev-parse HEAD)
+          test "$source_sha" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/main | awk '{print $1}')" = "$source_sha"
+          printf '%s\n' publication > build/release/phase-4b-stage
+          tag="ghcr.io/kunalz06/nidar-runtime:sha-${source_sha}"
+          auth_dir="$(mktemp -d)"; trap 'rm -rf "$auth_dir"' EXIT
+          printf '%s' "$GITHUB_TOKEN" | docker run --rm -i -v "$auth_dir:/auth" "$SKOPEO_IMAGE" \
+            login --authfile /auth/auth.json ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          if docker run --rm -v "$auth_dir:/auth:ro" "$SKOPEO_IMAGE" inspect --authfile /auth/auth.json "docker://${tag}" >build/release/phase-4b-prepush-tag.json 2>build/release/phase-4b-prepush-tag.err; then
+            echo "immutable release tag appeared during verification; refusing to overwrite" >&2; exit 1
+          fi
+          python3 scripts/verify-runtime-release.py check-tag --exists false \
+            --diagnostic-file build/release/phase-4b-prepush-tag.err \
+            --package-visibility "$(cat build/release/phase-4b-registry-visibility)" \
+            --output build/release/phase-4b-prepush-tag-verification.json
+          release_dir="$PWD/build/release"
+          skopeo() { docker run --rm -v "$release_dir:/release" -v "$auth_dir:/auth" "$SKOPEO_IMAGE" "$@"; }
+          skopeo inspect --override-os linux --override-arch arm64 --raw \
+            "oci-archive:/release/nidar-runtime-arm64.oci.tar" > build/release/phase-4b-candidate-raw.json
+          skopeo inspect --override-os linux --override-arch arm64 \
+            "oci-archive:/release/nidar-runtime-arm64.oci.tar" > build/release/phase-4b-candidate-inspect.json
+          jq -n --slurpfile raw build/release/phase-4b-candidate-raw.json --slurpfile inspect build/release/phase-4b-candidate-inspect.json \
+            '{manifest_digest:$inspect[0].Digest,config_digest:$raw[0].config.digest,layers:[$raw[0].layers[].digest],media_type:$raw[0].mediaType,platform:{os:$inspect[0].Os,architecture:$inspect[0].Architecture},labels:$inspect[0].Labels}' \
+            > build/release/phase-4b-candidate.json
+          # A conservative marker makes any interrupted copy UNVERIFIED until
+          # a later human-reviewed recovery proves that no remote write occurred.
+          touch build/release/phase-4b-publication-attempted
+          skopeo copy --preserve-digests --digestfile /release/phase-4b-registry.digest \
+            --override-os linux --override-arch arm64 --authfile /auth/auth.json \
+            "oci-archive:/release/nidar-runtime-arm64.oci.tar" "docker://${tag}"
+          touch build/release/phase-4b-pushed
+          skopeo inspect --override-os linux --override-arch arm64 --raw --authfile /auth/auth.json \
+            "docker://${tag}" > build/release/phase-4b-remote-raw.json
+          skopeo inspect --override-os linux --override-arch arm64 --authfile /auth/auth.json \
+            "docker://${tag}" > build/release/phase-4b-remote-inspect.json
+          jq -n --slurpfile raw build/release/phase-4b-remote-raw.json --slurpfile inspect build/release/phase-4b-remote-inspect.json \
+            '{manifest_digest:$inspect[0].Digest,config_digest:$raw[0].config.digest,layers:[$raw[0].layers[].digest],media_type:$raw[0].mediaType,platform:{os:$inspect[0].Os,architecture:$inspect[0].Architecture},labels:$inspect[0].Labels}' \
+            > build/release/phase-4b-remote.json
+          python3 scripts/verify-runtime-release.py verify-remote \
+            --candidate-file build/release/phase-4b-candidate.json --remote-file build/release/phase-4b-remote.json \
+            --output build/release/phase-4b-remote-verification.json
+          touch build/release/phase-4b-check-remote_identity
+          registry_digest=$(cat build/release/phase-4b-registry.digest)
+          test "$registry_digest" = "$(jq -r .registry_manifest_digest build/release/phase-4b-remote-verification.json)"
+          printf 'NIDAR_REGISTRY_REFERENCE=ghcr.io/kunalz06/nidar-runtime@%s\n' "$registry_digest" >> "$GITHUB_ENV"
+      - name: Verify private digest-pulled runtime
+        if: env.NIDAR_IDEMPOTENT != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
+          umask 077
+          github_api_config="$(mktemp)"
+          trap 'rm -rf "$DOCKER_CONFIG"; rm -f "$github_api_config" "${package_response:-}"' EXIT
+          printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" > "$github_api_config"
+          printf '%s\n' digest-pull-verification > build/release/phase-4b-stage
+          registry_reference="$NIDAR_REGISTRY_REFERENCE"
+          printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker pull "${registry_reference}"
+          printf '%s\n' digest-pull-artifact > build/release/phase-4b-stage
+          tests/integration/test_runtime_arm64_artifact.sh "${registry_reference}"
+          touch build/release/phase-4b-check-digest_pull_artifact
+          printf '%s\n' digest-pull-execution > build/release/phase-4b-stage
+          tests/integration/test_runtime_arm64_execution.sh "${registry_reference}"
+          touch build/release/phase-4b-check-digest_pull_execution
+          printf '%s\n' digest-pull-policy > build/release/phase-4b-stage
+          tests/integration/test_runtime_image_policy.sh "${registry_reference}"
+          touch build/release/phase-4b-check-digest_pull_image_policy
+          printf '%s\n' postpull-private-visibility > build/release/phase-4b-stage
+          package_response="$(mktemp)"
+          package_status=$(curl --silent --show-error --config "$github_api_config" \
+            --output "$package_response" --write-out '%{http_code}' \
+            "https://api.github.com/user/packages/container/nidar-runtime")
+          python3 scripts/verify-runtime-release.py check-package \
+            --status "$package_status" --response-file "$package_response" \
+            --output build/release/phase-4b-postpull-package-verification.json
+          rm -f "$package_response"
+          printf '%s\n' private > build/release/phase-4b-registry-visibility
+          touch build/release/phase-4b-check-private_visibility
+          touch build/release/phase-4b-postpull-tests-passed
+      - name: Verify idempotent private digest-pulled runtime
+        if: env.NIDAR_IDEMPOTENT == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
+          umask 077
+          github_api_config="$(mktemp)"
+          trap 'rm -rf "$DOCKER_CONFIG"; rm -f "$github_api_config" "${package_response:-}"' EXIT
+          printf 'header = "Authorization: Bearer %s"\nheader = "X-GitHub-Api-Version: 2022-11-28"\n' "$GITHUB_TOKEN" > "$github_api_config"
+          printf '%s\n' idempotent-digest-pull-verification > build/release/phase-4b-stage
+          registry_reference="$NIDAR_REGISTRY_REFERENCE"
+          printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker pull "${registry_reference}"
+          printf '%s\n' digest-pull-artifact > build/release/phase-4b-stage
+          tests/integration/test_runtime_arm64_artifact.sh "${registry_reference}"
+          touch build/release/phase-4b-check-digest_pull_artifact
+          printf '%s\n' digest-pull-execution > build/release/phase-4b-stage
+          tests/integration/test_runtime_arm64_execution.sh "${registry_reference}"
+          touch build/release/phase-4b-check-digest_pull_execution
+          printf '%s\n' digest-pull-policy > build/release/phase-4b-stage
+          tests/integration/test_runtime_image_policy.sh "${registry_reference}"
+          touch build/release/phase-4b-check-digest_pull_image_policy
+          printf '%s\n' retry-private-visibility > build/release/phase-4b-stage
+          package_response="$(mktemp)"
+          package_status=$(curl --silent --show-error --config "$github_api_config" \
+            --output "$package_response" --write-out '%{http_code}' \
+            "https://api.github.com/user/packages/container/nidar-runtime")
+          python3 scripts/verify-runtime-release.py check-package \
+            --status "$package_status" --response-file "$package_response" \
+            --output build/release/phase-4b-retry-package-verification.json
+          rm -f "$package_response"
+          touch build/release/phase-4b-check-private_visibility
+          touch build/release/phase-4b-postpull-tests-passed
+      - name: Prepare provisional status and failure evidence
+        id: prepare_evidence
+        if: always()
+        env:
+          NIDAR_PRIOR_STEPS_SUCCESS: ${{ job.status == 'success' }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/release
+          printf 'prior_steps_success=%s\n' "$NIDAR_PRIOR_STEPS_SUCCESS" >> "$GITHUB_OUTPUT"
+          python3 scripts/verify-runtime-release.py finalize-workflow \
+            --release-dir build/release --source-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --prior-steps-success "$NIDAR_PRIOR_STEPS_SUCCESS" \
+            --evidence-upload-success false --allow-unverified \
+            --output build/release/phase-4b-provisional-record.json > /dev/null
+      - name: Upload Phase 4B diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: phase-4b-runtime-release-diagnostics
+          path: |
+            build/release/phase-4b-provisional-record.json
+            build/release/phase-4b-*.err
+          if-no-files-found: error
+          retention-days: 90
+      - name: Generate final release record
+        if: success()
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-runtime-release.py finalize-workflow \
+            --release-dir build/release --source-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --prior-steps-success true --evidence-upload-success true \
+            --output build/release/phase-4b-release-record.json > /dev/null
+      - name: Upload Phase 4B release evidence
+        id: final_evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: phase-4b-runtime-release-evidence
+          path: |
+            build/release/phase-4b-release-record.json
+            build/release/phase-4b-provisional-record.json
+            build/release/phase-4b-release-context.json
+            build/release/phase-4b-ci-evidence.json
+            build/release/phase-4b-package-verification.json
+            build/release/phase-4b-postpull-package-verification.json
+            build/release/phase-4b-retry-package-verification.json
+            build/release/phase-4b-existing-tag-verification.json
+            build/release/phase-4b-prepush-tag-verification.json
+            build/release/phase-4b-idempotent-verification.json
+            build/release/phase-4b-candidate.json
+            build/release/phase-4b-remote.json
+            build/release/phase-4b-existing-remote.json
+            build/release/phase-4b-remote-verification.json
+            build/release/phase-4b-runtime-manifest.txt
+            build/release/phase-4b-lock.digest
+            build/release/phase-4b-archive.digest
+            build/release/phase-4b-registry.digest
+            build/release/phase-4b-*.err
+            build/release/phase-4b-apt-closure/*.tsv
+            build/release/phase-4b-apt-closure/summary.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Confirm evidence upload before release summary
+        if: always()
+        env:
+          NIDAR_PRIOR_STEPS_SUCCESS: ${{ steps.prepare_evidence.outputs.prior_steps_success == 'true' }}
+          NIDAR_FINAL_UPLOAD_SUCCESS: ${{ steps.final_evidence.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          if test "$NIDAR_PRIOR_STEPS_SUCCESS" = true && test "$NIDAR_FINAL_UPLOAD_SUCCESS" = true; then
+            python3 scripts/verify-runtime-release.py write-record \
+              --record-file build/release/phase-4b-release-record.json > /dev/null
+            cat build/release/phase-4b-release-record.json >> "$GITHUB_STEP_SUMMARY"
+          else
+            rm -f build/release/phase-4b-release-record.json
+            python3 scripts/verify-runtime-release.py finalize-workflow \
+              --release-dir build/release --source-sha "$GITHUB_SHA" \
+              --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+              --prior-steps-success "$NIDAR_PRIOR_STEPS_SUCCESS" \
+              --evidence-upload-success false --allow-unverified \
+              --output build/release/phase-4b-release-record.json > /dev/null || true
+            test ! -f build/release/phase-4b-release-record.json || \
+              cat build/release/phase-4b-release-record.json >> "$GITHUB_STEP_SUMMARY"
+            echo 'release evidence upload or prior verification failed; publication is not VERIFIED' >&2
+            exit 1
+          fi
